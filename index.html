@@ -3,10 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>p5 Whiteboard (transparent)</title>
+  <title>p5 Whiteboard (transparent, layers)</title>
 
   <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/addons/p5.dom.min.js"></script>
 
   <style>
     :root{
@@ -28,33 +27,77 @@
 
     #canvas-wrap{ position:fixed; inset:0; z-index:1; background:transparent; }
 
+    /* Thin outline around active drawing area (entire slide) */
+    #canvas-outline{
+      position:fixed;
+      inset:0;
+      border:1px solid rgba(140,140,140,0.35);
+      pointer-events:none;
+      z-index:2;
+    }
+
+    /* Vertical toolbar, narrow */
     #ui{
       position:fixed;
-      top:10px; left:10px;
+      top:10px; right:10px;
       z-index:10;
 
-      display:inline-flex;
-      flex-wrap:wrap;
-      gap:8px;
-      align-items:center;
+      display:flex;
+      flex-direction:column;
+      align-items:stretch;
+      gap:6px;
 
       background:var(--panel);
       border:1px solid var(--border);
       border-radius:var(--radius);
       box-shadow:var(--shadow);
-      padding:8px 10px;
+      padding:7px;
 
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       user-select:none;
 
-      width: fit-content;
+      width: 144px;                 /* narrower */
       max-width: calc(100vw - 20px);
     }
 
+    #ui.collapsed .advanced{ display:none !important; }
+
+    /* Draggable handle */
+    #dragHandle{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      padding:6px 6px;
+      border:1px solid var(--border);
+      border-radius:10px;
+      background:white;
+      cursor:grab;
+      touch-action:none;
+    }
+    #dragHandle:active{ cursor:grabbing; }
+
+    .dots{
+      display:grid;
+      grid-template-columns: repeat(3, 3px);
+      grid-auto-rows:3px;
+      gap:3px;
+      opacity:0.55;
+      padding-left:2px;
+    }
+    .dots span{
+      width:3px; height:3px;
+      border-radius:50%;
+      background: rgba(0,0,0,0.55);
+      display:block;
+    }
+
     #collapseBtn{
-      width:28px; height:28px;
-      display:inline-flex; align-items:center; justify-content:center;
+      width:26px; height:26px;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
       border:1px solid var(--border);
       border-radius:999px;
       background:white;
@@ -69,10 +112,11 @@
       background:white;
       color:var(--text);
       border-radius:999px;
-      padding:6px 10px;
+      padding:7px 8px;
       font-size:12px;
       cursor:pointer;
       white-space:nowrap;
+      text-align:center;
     }
     .tool.active{
       background:rgba(0,0,0,0.92);
@@ -80,22 +124,23 @@
       color:white;
     }
 
-    .sep{ width:1px; align-self:stretch; background:var(--border); margin:0 2px; }
-
     select{
       border:1px solid var(--border);
       border-radius:999px;
-      padding:6px 10px;
+      padding:7px 8px;
       background:white;
       font-size:12px;
       cursor:pointer;
+      width:100%;
     }
 
     .pill{
-      display:inline-flex; gap:6px; align-items:center;
+      display:flex;
+      align-items:center;
+      gap:8px;
       border:1px solid var(--border);
       border-radius:999px;
-      padding:6px 10px;
+      padding:7px 8px;
       background:white;
       font-size:12px;
       cursor:pointer;
@@ -108,40 +153,57 @@
       background:white;
       color:var(--text);
       border-radius:12px;
-      padding:7px 10px;
+      padding:8px 8px;
       font-size:12px;
       cursor:pointer;
-      transition:transform .05s ease, background .15s ease;
       white-space:nowrap;
+      transition: transform .05s ease, background .12s ease;
+      width:100%;
     }
-    button.action:hover{ background:rgba(0,0,0,0.04); }
-    button.action:active{ transform:translateY(1px); }
-    button.action.primary{ background:rgba(0,0,0,0.92); color:white; border-color:rgba(0,0,0,0.92); }
-    button.action.primary:hover{ background:rgba(0,0,0,0.84); }
+    button.action:hover{ background: rgba(0,0,0,0.04); }
+    button.action:active{ transform: translateY(1px); }
+    button.action.primary{
+      background: rgba(0,0,0,0.92);
+      color:white;
+      border-color: rgba(0,0,0,0.92);
+    }
+    button.action.primary:hover{ background: rgba(0,0,0,0.84); }
 
-    /* Color dropdown */
+    /* Color dropdown (swatches) */
     .color-select{
       position:relative;
-      display:inline-flex;
+      display:flex;
       align-items:center;
-      gap:6px;
+      justify-content:space-between;
+      gap:8px;
       border:1px solid var(--border);
       border-radius:999px;
-      padding:4px 8px;
+      padding:6px 8px;
       background:white;
       cursor:pointer;
+      width:100%;
+      box-sizing:border-box;
     }
-    .color-select .chip{
+    .color-left{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      min-width:0;
+    }
+    .chip{
       width:16px; height:16px;
       border-radius:4px;
       border:1px solid rgba(0,0,0,0.18);
       box-sizing:border-box;
+      background:#111;
+      flex:0 0 auto;
     }
-    .color-select .caret{ opacity:.7; font-size:12px; margin-left:2px; }
+    .caret{ opacity:.7; font-size:12px; }
+
     .palette{
       position:absolute;
       top:110%;
-      left:0;
+      right:0;
       padding:8px;
       background:white;
       border:1px solid var(--border);
@@ -168,20 +230,113 @@
       outline-offset:1px;
     }
 
-    #ui.collapsed .advanced{ display:none !important; }
+    /* Layers dropdown (shows active layer like a tool button) */
+    .layers-select{
+      position:relative;
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:6px 8px;
+      background:white;
+      cursor:pointer;
+      width:100%;
+      box-sizing:border-box;
+    }
+    .layers-label{
+      font-size:12px;
+      opacity:.85;
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .layer-badge{
+      width:20px;
+      height:20px;
+      border-radius:999px;
+      border:1px solid rgba(0,0,0,0.18);
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      font-weight:700;
+      font-size:12px;
+      line-height:1;
+      background: rgba(0,0,0,0.92);
+      color:white;
+    }
+
+    .layers-menu{
+      position:absolute;
+      top:110%;
+      right:0;
+      padding:6px;
+      background:white;
+      border:1px solid var(--border);
+      border-radius:12px;
+      box-shadow:var(--shadow);
+      display:none;
+      z-index:9999;
+      min-width: 170px;
+    }
+    .layers-menu.open{ display:block; }
+    .layer-item{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:8px 10px;
+      border-radius:10px;
+      cursor:pointer;
+      font-size:12px;
+    }
+    .layer-item:hover{ background: rgba(0,0,0,0.04); }
+    .layer-left{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      min-width: 0;
+    }
+    .tick{
+      width:16px;
+      text-align:center;
+      opacity:0.9;
+      font-weight:700;
+    }
+    .layer-name{
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .vis-dot{
+      width:10px; height:10px;
+      border-radius:50%;
+      border:1px solid rgba(0,0,0,0.22);
+      background: rgba(0,0,0,0.06);
+      flex: 0 0 auto;
+    }
+    .layer-item.invisible .layer-name{ opacity:0.45; text-decoration: line-through; }
+    .layer-item.invisible .vis-dot{ opacity:0.25; }
+
+    #ui, #ui * { touch-action: none; }
   </style>
 </head>
 
 <body>
   <div id="ui" class="collapsed">
-    <!-- Collapse/expand -->
-    <button id="collapseBtn" title="Collapse/expand toolbar">▸</button>
+    <div id="dragHandle" title="Drag toolbar">
+      <div class="dots" aria-hidden="true">
+        <span></span><span></span><span></span>
+        <span></span><span></span><span></span>
+      </div>
+      <button id="collapseBtn" title="Collapse/expand">▸</button>
+    </div>
 
     <!-- Essentials -->
-    <button class="tool" id="toolPen">Pen</button>
-    <button class="tool" id="toolEraser">Eraser</button>
+    <button class="tool" id="toolPen" title="Pen">Pen</button>
+    <button class="tool" id="toolEraser" title="Eraser">Eraser</button>
 
-    <!-- Shapes dropdown is essential (line/arrow/circle/rect) -->
     <select id="shapeTool" title="Shape tool">
       <option value="" disabled selected>Shape</option>
       <option value="line">Line</option>
@@ -191,17 +346,24 @@
     </select>
 
     <div class="color-select" id="colorSelect" title="Color">
-      <div class="chip" id="colorChip"></div>
-      <span class="caret">▾</span>
+      <div class="color-left">
+        <div class="chip" id="colorChip"></div>
+        <div style="font-size:12px; opacity:.85;">Color</div>
+      </div>
+      <div class="caret">▾</div>
       <div class="palette" id="palette">
         <div class="palette-grid" id="paletteGrid"></div>
       </div>
     </div>
 
     <!-- Advanced -->
-    <div class="sep advanced"></div>
+    <select class="advanced" id="bgMode" title="Background">
+      <option value="transparent" selected>Bg: Transparent</option>
+      <option value="dots">Bg: Dots</option>
+      <option value="grid">Bg: Grid</option>
+    </select>
 
-    <button class="tool advanced" id="toolLaser">Laser</button>
+    <button class="tool advanced" id="toolLaser" title="Laser pointer">Laser</button>
 
     <select class="advanced" id="lineStyle" title="Line style">
       <option value="solid">Solid</option>
@@ -211,13 +373,29 @@
     </select>
 
     <select class="advanced" id="strokeWidth" title="Stroke width">
-      <option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option>
-      <option>8</option><option>10</option><option>20</option><option>30</option>
+      <option>1</option>
+      <option selected>2</option>
+      <option>3</option>
+      <option>4</option>
+      <option>5</option>
+      <option>8</option>
+      <option>10</option>
+      <option>20</option>
+      <option>30</option>
     </select>
 
-    <select class="advanced" id="smoothing" title="Smoothing">
-      <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
-      <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option>
+    <!-- Omit word "Smoothing" in the UI; keep in title tooltip -->
+    <select class="advanced" id="smoothing" title="Smoothing strength (1 = none, 10 = strong)">
+      <option value="1">1</option>
+      <option value="2" selected>2</option>
+      <option value="3">3</option>
+      <option value="4">4</option>
+      <option value="5">5</option>
+      <option value="6">6</option>
+      <option value="7">7</option>
+      <option value="8">8</option>
+      <option value="9">9</option>
+      <option value="10">10</option>
     </select>
 
     <label class="pill advanced" title="Snap points to grid">
@@ -225,86 +403,118 @@
       Snap
     </label>
 
-    <button class="action advanced" id="undo" title="Undo">Undo</button>
-    <button class="action advanced" id="clear" title="Clear">Clear</button>
+    <!-- Layers dropdown: shows active layer badge (1/2/3) -->
+    <div class="layers-select advanced" id="layersSelect" title="Layers: click a layer to toggle visibility and select it">
+      <div class="layers-label">
+        <div class="layer-badge" id="activeLayerBadge">1</div>
+        <div>Layer</div>
+      </div>
+      <div class="caret">▾</div>
+      <div class="layers-menu" id="layersMenu"></div>
+    </div>
 
-    <button class="action primary advanced" id="save" title="Export PNG">Save PNG</button>
-    <label class="pill advanced" title="Include grid in PNG">
-      <input id="includeGrid" type="checkbox" />
-      Include grid
+    <button class="action advanced" id="undo" title="Undo (active layer)">Undo</button>
+    <button class="action advanced" id="clear" title="Clear (all layers)">Clear</button>
+
+    <button class="action primary advanced" id="save" title="Export PNG">Save</button>
+    <label class="pill advanced" title="Include background overlay in PNG export">
+      <input id="includeBg" type="checkbox" />
+      Bg
     </label>
   </div>
 
   <div id="canvas-wrap"></div>
+  <div id="canvas-outline"></div>
 
 <script>
-/* Core state */
-let pg, actions = [], current = null;
-let tool = "pen"; // pen | eraser | laser | line | arrow | circle | rect
+/* =========================
+   Whiteboard + Layers
+   ========================= */
 
 const GRID_STEP = 20;
-let snapToGrid = false;
+
+/* Better “teaching red” */
+const LASER_RED = { r: 215, g: 38, b: 61 }; // #D7263D
+
+/* Colors reordered for typical use: black, strong red, green, blue, ... */
+const COLORS = [
+  "#111111", // black
+  "#D7263D", // strong red
+  "#009E73", // green
+  "#0072B2", // blue
+  "#FFFFFF", // white
+  "#E69F00", // orange
+  "#F0E442", // yellow
+  "#56B4E9", // light blue
+  "#CC79A7", // magenta
+  "#00BFC4", // cyan
+  "#D55E00", // vermillion
+  "#8C564B"  // brown
+];
 
 const TOOL_DEFAULT_SNAP = {
-  pen: false, eraser: false, laser: false,
-  line: true, arrow: true, circle: true, rect: true
+  pen: false,
+  eraser: false,
+  laser: false,
+  line: true,
+  arrow: true,
+  circle: true,
+  rect: true
 };
 
+let tool = "pen";
 let lineStyle = "solid";
 let strokeWidth = 2;
 let smoothing = 2;
-let currentColor = "#111111";
-let includeGridInExport = false;
+let currentColor = COLORS[0];
 
 let lastNonEraserWidth = strokeWidth;
+let snapToGrid = false;
 
+let bgMode = "transparent";
+let includeBgInExport = false;
+
+/* Layers */
+const LAYER_COUNT = 3;
+let layers = []; // { pg, actions:[], visible:true }
+let activeLayer = 0;
+
+/* Current in-progress */
+let current = null;
+
+/* Laser */
 let laserTrail = [];
 const LASER_FADE_MS = 450;
 
-// Storage
+/* Storage: per page */
 const params = new URLSearchParams(location.search);
 const PAGE_ID = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
-const STORAGE_KEY = `p5_whiteboard_v11::${location.origin}${location.pathname}::page=${PAGE_ID}`;
+const STORAGE_KEY = `p5_whiteboard_layers_v2::${location.origin}${location.pathname}::page=${PAGE_ID}`;
 
+/* Toolbar position */
+const UI_POS_KEY = `p5_whiteboard_ui_pos_v2::${location.origin}${location.pathname}`;
+
+/* Save debounce */
 let saveTimer = null;
 function scheduleSave(){ if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveToLocalStorage, 160); }
-function saveToLocalStorage(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({version:11,page:PAGE_ID,actions})); }
-  catch(e){ console.warn("Could not save:", e); }
-}
-function loadFromLocalStorage(){
-  try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    const data = JSON.parse(raw);
-    if (!data || data.version !== 11 || !Array.isArray(data.actions)) return;
-    actions = data.actions;
-  } catch(e){ console.warn("Could not load:", e); }
-}
 
-/* UI refs */
-let ui, collapseBtn;
-let toolPenBtn, toolEraserBtn, toolLaserBtn, shapeToolSel;
-let lineStyleSel, strokeWidthSel, smoothingSel;
-let snapEl, undoBtn, clearBtn, saveBtn, includeGridEl;
-let colorSelect, palette, paletteGrid, colorChip;
-
-const COLORS = [
-  "#111111", "#FFFFFF", "#E69F00", "#56B4E9", "#009E73", "#F0E442",
-  "#0072B2", "#D55E00", "#CC79A7", "#00BFC4", "#FF00A8", "#8C564B"
-];
-
+/* p5 setup/draw */
 function setup(){
   const c = createCanvas(windowWidth, windowHeight);
   c.parent("canvas-wrap");
+  pixelDensity(1);
 
-  pg = createGraphics(windowWidth, windowHeight);
-  pg.pixelDensity(1);
-  pg.clear();
+  layers = [];
+  for (let i = 0; i < LAYER_COUNT; i++){
+    const pg = createGraphics(windowWidth, windowHeight);
+    pg.pixelDensity(1);
+    pg.clear();
+    layers.push({ pg, actions: [], visible: true });
+  }
 
   initUI();
   loadFromLocalStorage();
-  rebuildBuffer();
+  rebuildAllBuffers();
 
   const canvasEl = document.querySelector("canvas");
   if (canvasEl) canvasEl.style.touchAction = "none";
@@ -314,59 +524,82 @@ function setup(){
 
 function draw(){
   clear();
-  image(pg, 0, 0);
-  drawGridOverlay();
-  if (current && current.type !== "laser") drawAction(current, this, true);
+  drawBackgroundOverlay(this);
+
+  for (let i = 0; i < LAYER_COUNT; i++){
+    if (!layers[i].visible) continue;
+    image(layers[i].pg, 0, 0);
+  }
+
+  if (current && current.type !== "laser"){
+    drawAction(current, this, true);
+  }
+
   updateLaserTrail();
   drawLaserTrail();
 }
 
+/* UI refs */
+let ui, dragHandle, collapseBtn, activeLayerBadge;
+let toolPenBtn, toolEraserBtn, toolLaserBtn, shapeToolSel;
+let bgModeSel, lineStyleSel, strokeWidthSel, smoothingSel;
+let snapEl, undoBtn, clearBtn, saveBtn, includeBgEl;
+let colorSelect, palette, paletteGrid, colorChip;
+let layersSelect, layersMenu;
+
+/* UI init */
 function initUI(){
   ui = document.getElementById("ui");
+  dragHandle = document.getElementById("dragHandle");
   collapseBtn = document.getElementById("collapseBtn");
+  activeLayerBadge = document.getElementById("activeLayerBadge");
 
   toolPenBtn = document.getElementById("toolPen");
   toolEraserBtn = document.getElementById("toolEraser");
   toolLaserBtn = document.getElementById("toolLaser");
   shapeToolSel = document.getElementById("shapeTool");
 
-  lineStyleSel = document.getElementById("lineStyle");
-  strokeWidthSel = document.getElementById("strokeWidth");
-  smoothingSel = document.getElementById("smoothing");
-  snapEl = document.getElementById("snap");
-  undoBtn = document.getElementById("undo");
-  clearBtn = document.getElementById("clear");
-  saveBtn = document.getElementById("save");
-  includeGridEl = document.getElementById("includeGrid");
-
   colorSelect = document.getElementById("colorSelect");
   palette = document.getElementById("palette");
   paletteGrid = document.getElementById("paletteGrid");
   colorChip = document.getElementById("colorChip");
 
-  // Start collapsed (as requested). Allow persistence if you want later:
+  bgModeSel = document.getElementById("bgMode");
+  lineStyleSel = document.getElementById("lineStyle");
+  strokeWidthSel = document.getElementById("strokeWidth");
+  smoothingSel = document.getElementById("smoothing");
+
+  snapEl = document.getElementById("snap");
+
+  layersSelect = document.getElementById("layersSelect");
+  layersMenu = document.getElementById("layersMenu");
+
+  undoBtn = document.getElementById("undo");
+  clearBtn = document.getElementById("clear");
+  saveBtn = document.getElementById("save");
+  includeBgEl = document.getElementById("includeBg");
+
   setCollapsed(true);
 
-  collapseBtn.addEventListener("click", () => setCollapsed(!ui.classList.contains("collapsed")));
+  buildPalette();
+  setColor(currentColor);
 
-  toolPenBtn.addEventListener("click", () => {
-    shapeToolSel.selectedIndex = 0; // reset to "Shape"
-    setTool("pen");
-  });
-  toolEraserBtn.addEventListener("click", () => {
-    shapeToolSel.selectedIndex = 0;
-    setTool("eraser");
-  });
-  toolLaserBtn.addEventListener("click", () => {
-    shapeToolSel.selectedIndex = 0;
-    setTool("laser");
+  rebuildLayersMenu();
+  updateActiveLayerBadge();
+
+  collapseBtn.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    setCollapsed(!ui.classList.contains("collapsed"));
   });
 
-  // FIX: use "input" so the FIRST selection (even if "line" was default previously) triggers immediately.
-  // Also we keep a disabled placeholder selected by default, so first choice always changes value.
+  toolPenBtn.addEventListener("click", () => { shapeToolSel.selectedIndex = 0; setTool("pen"); });
+  toolEraserBtn.addEventListener("click", () => { shapeToolSel.selectedIndex = 0; setTool("eraser"); });
+  toolLaserBtn.addEventListener("click", () => { shapeToolSel.selectedIndex = 0; setTool("laser"); });
+
   shapeToolSel.addEventListener("input", () => setTool(shapeToolSel.value));
   shapeToolSel.addEventListener("change", () => setTool(shapeToolSel.value));
 
+  bgModeSel.addEventListener("change", () => { bgMode = bgModeSel.value; scheduleSave(); });
   lineStyleSel.addEventListener("change", () => lineStyle = lineStyleSel.value);
 
   strokeWidthSel.value = String(strokeWidth);
@@ -379,33 +612,46 @@ function initUI(){
   smoothingSel.addEventListener("change", () => smoothing = parseInt(smoothingSel.value, 10));
 
   snapEl.addEventListener("change", () => snapToGrid = snapEl.checked);
-  includeGridEl.addEventListener("change", () => includeGridInExport = includeGridEl.checked);
+  includeBgEl.addEventListener("change", () => includeBgInExport = includeBgEl.checked);
 
   undoBtn.addEventListener("click", () => {
-    if (actions.length){ actions.pop(); rebuildBuffer(); scheduleSave(); }
+    const L = layers[activeLayer];
+    if (!L.actions.length) return;
+    L.actions.pop();
+    rebuildLayerBuffer(activeLayer);
+    scheduleSave();
   });
 
   clearBtn.addEventListener("click", () => {
-    const ok = confirm("Really delete everything on this whiteboard?\n\nThis cannot be undone.");
+    const ok = confirm("Really delete everything on ALL layers?\n\nThis cannot be undone.");
     if (!ok) return;
-    actions = [];
-    pg.clear();
+    for (let i = 0; i < LAYER_COUNT; i++){
+      layers[i].actions = [];
+      layers[i].pg.clear();
+    }
     scheduleSave();
   });
 
   saveBtn.addEventListener("click", () => exportPNG());
 
-  buildPalette();
-  setColor(currentColor);
-
   document.addEventListener("pointerdown", (ev) => {
     if (!colorSelect.contains(ev.target)) palette.classList.remove("open");
+    if (!layersSelect.contains(ev.target)) layersMenu.classList.remove("open");
   });
 
-  colorSelect.addEventListener("click", (ev) => {
+  colorSelect.addEventListener("pointerdown", (ev) => {
     ev.stopPropagation();
     palette.classList.toggle("open");
+    layersMenu.classList.remove("open");
   });
+
+  layersSelect.addEventListener("pointerdown", (ev) => {
+    ev.stopPropagation();
+    layersMenu.classList.toggle("open");
+    palette.classList.remove("open");
+  });
+
+  initDrag();
 }
 
 function setCollapsed(collapsed){
@@ -413,14 +659,15 @@ function setCollapsed(collapsed){
   collapseBtn.textContent = collapsed ? "▸" : "▾";
 }
 
+/* Palette */
 function buildPalette(){
   paletteGrid.innerHTML = "";
   COLORS.forEach(hex => {
     const d = document.createElement("div");
     d.className = "swatch";
     d.style.background = hex;
-    d.title = hex;
-    d.addEventListener("click", (ev) => {
+    d.title = hex; // hover shows exact
+    d.addEventListener("pointerdown", (ev) => {
       ev.stopPropagation();
       setColor(hex);
       palette.classList.remove("open");
@@ -447,8 +694,122 @@ function rgbToHex(rgb){
   return `#${to2(m[0])}${to2(m[1])}${to2(m[2])}`;
 }
 
+/* Layers */
+function updateActiveLayerBadge(){
+  activeLayerBadge.textContent = String(activeLayer + 1);
+}
+
+function rebuildLayersMenu(){
+  layersMenu.innerHTML = "";
+  for (let i = 0; i < LAYER_COUNT; i++){
+    const item = document.createElement("div");
+    item.className = "layer-item" + (layers[i].visible ? "" : " invisible");
+
+    const left = document.createElement("div");
+    left.className = "layer-left";
+
+    const tick = document.createElement("div");
+    tick.className = "tick";
+    tick.textContent = (i === activeLayer) ? "✓" : "";
+
+    const visDot = document.createElement("div");
+    visDot.className = "vis-dot";
+    visDot.style.background = layers[i].visible ? "rgba(0,0,0,0.12)" : "rgba(0,0,0,0.03)";
+
+    const name = document.createElement("div");
+    name.className = "layer-name";
+    name.textContent = `Layer ${i + 1}`;
+
+    left.appendChild(tick);
+    left.appendChild(visDot);
+    left.appendChild(name);
+
+    const right = document.createElement("div");
+    right.style.fontSize = "12px";
+    right.style.opacity = "0.65";
+    right.textContent = layers[i].visible ? "on" : "off";
+
+    item.appendChild(left);
+    item.appendChild(right);
+
+    item.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();
+      layers[i].visible = !layers[i].visible;   // toggle visibility
+      activeLayer = i;                          // also select as active
+      updateActiveLayerBadge();
+      rebuildLayersMenu();
+      layersMenu.classList.remove("open");
+      scheduleSave();
+    });
+
+    layersMenu.appendChild(item);
+  }
+}
+
+/* Drag toolbar */
+function initDrag(){
+  try{
+    const raw = localStorage.getItem(UI_POS_KEY);
+    if (raw){
+      const p = JSON.parse(raw);
+      if (p && typeof p.left === "number" && typeof p.top === "number"){
+        ui.style.left = `${p.left}px`;
+        ui.style.top  = `${p.top}px`;
+        ui.style.right = "auto";
+      }
+    }
+  } catch {}
+
+  let dragging = false;
+  let startX=0, startY=0, startLeft=0, startTop=0;
+
+  dragHandle.addEventListener("pointerdown", (ev) => {
+    if (ev.target === collapseBtn) return;
+    dragging = true;
+    dragHandle.setPointerCapture(ev.pointerId);
+
+    startX = ev.clientX;
+    startY = ev.clientY;
+
+    const rect = ui.getBoundingClientRect();
+    startLeft = rect.left;
+    startTop  = rect.top;
+
+    ui.style.left = `${startLeft}px`;
+    ui.style.top  = `${startTop}px`;
+    ui.style.right = "auto";
+  });
+
+  dragHandle.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+
+    const rect = ui.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+
+    let newLeft = startLeft + dx;
+    let newTop  = startTop + dy;
+
+    newLeft = Math.max(8, Math.min(window.innerWidth  - w - 8, newLeft));
+    newTop  = Math.max(8, Math.min(window.innerHeight - h - 8, newTop));
+
+    ui.style.left = `${newLeft}px`;
+    ui.style.top  = `${newTop}px`;
+  });
+
+  dragHandle.addEventListener("pointerup", () => {
+    if (!dragging) return;
+    dragging = false;
+    const rect = ui.getBoundingClientRect();
+    try{ localStorage.setItem(UI_POS_KEY, JSON.stringify({ left: rect.left, top: rect.top })); } catch {}
+  });
+}
+
 /* Tool switching */
 function setTool(t){
+  if (!t) return;
+
   current = null;
   tool = t;
 
@@ -456,11 +817,9 @@ function setTool(t){
   toolEraserBtn.classList.toggle("active", tool === "eraser");
   toolLaserBtn.classList.toggle("active", tool === "laser");
 
-  // tool default snap
   snapToGrid = !!TOOL_DEFAULT_SNAP[tool];
   snapEl.checked = snapToGrid;
 
-  // eraser width rules
   if (tool === "eraser"){
     lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
     strokeWidth = 10;
@@ -470,26 +829,49 @@ function setTool(t){
     strokeWidthSel.value = String(strokeWidth);
   }
 
-  // keep dropdown synced (if a shape tool is selected)
   if (tool === "line" || tool === "arrow" || tool === "circle" || tool === "rect"){
-    // find option and select it (won't select placeholder)
     const idx = Array.from(shapeToolSel.options).findIndex(o => o.value === tool);
     if (idx >= 0) shapeToolSel.selectedIndex = idx;
   }
 }
 
-/* Grid + snap */
-function drawGridOverlay(){
-  push();
-  stroke(0, 40);
-  strokeWeight(1);
-  for (let x = 0; x < width; x += GRID_STEP) line(x, 0, x, height);
-  for (let y = 0; y < height; y += GRID_STEP) line(0, y, width, y);
-  pop();
+/* Background overlay */
+function drawBackgroundOverlay(target){
+  if (bgMode === "transparent") return;
+
+  if (bgMode === "grid"){
+    target.push();
+    target.stroke(0, 40);
+    target.strokeWeight(1);
+    for (let x = 0; x < width; x += GRID_STEP) target.line(x, 0, x, height);
+    for (let y = 0; y < height; y += GRID_STEP) target.line(0, y, width, y);
+    target.pop();
+    return;
+  }
+
+  // dots
+  target.push();
+  target.noStroke();
+  target.fill(0, 55);
+  const r = 1.6;
+  for (let x = 0; x < width; x += GRID_STEP){
+    for (let y = 0; y < height; y += GRID_STEP){
+      target.circle(x, y, 2*r);
+    }
+  }
+  target.pop();
 }
+
+/* Snap */
 function snapPoint(x, y){
   if (!snapToGrid) return {x, y};
-  return { x: Math.round(x / GRID_STEP) * GRID_STEP, y: Math.round(y / GRID_STEP) * GRID_STEP };
+  return { x: Math.round(x/GRID_STEP)*GRID_STEP, y: Math.round(y/GRID_STEP)*GRID_STEP };
+}
+
+function isPointerOverUI(){
+  const r = ui.getBoundingClientRect();
+  const x = mouseX, y = mouseY;
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
 /* Input */
@@ -500,12 +882,6 @@ function mouseReleased(){ finishAction(); }
 function touchStarted(){ if (isPointerOverUI()) return true; startAction(mouseX, mouseY); return false; }
 function touchMoved(){ if (!current) return true; extendAction(mouseX, mouseY); return false; }
 function touchEnded(){ if (isPointerOverUI()) return true; finishAction(); return false; }
-
-function isPointerOverUI(){
-  const r = ui.getBoundingClientRect();
-  const x = mouseX, y = mouseY;
-  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-}
 
 /* Actions */
 function makeStyle(){
@@ -524,17 +900,18 @@ function startAction(x, y){
   }
 
   const style = makeStyle();
+  const layerIndex = activeLayer;
 
   if (tool === "pen" || tool === "eraser"){
-    current = { type:"path", style, points:[p0] };
+    current = { type:"path", style, points:[p0], layer: layerIndex };
   } else if (tool === "line"){
-    current = { type:"line", style, a:p0, b:p0 };
+    current = { type:"line", style, a:p0, b:p0, layer: layerIndex };
   } else if (tool === "arrow"){
-    current = { type:"arrow", style, a:p0, b:p0 };
+    current = { type:"arrow", style, a:p0, b:p0, layer: layerIndex };
   } else if (tool === "circle"){
-    current = { type:"circle", style, c:p0, r:0 };
+    current = { type:"circle", style, c:p0, r:0, layer: layerIndex };
   } else if (tool === "rect"){
-    current = { type:"rect", style, a:p0, b:p0 };
+    current = { type:"rect", style, a:p0, b:p0, layer: layerIndex };
   }
 }
 
@@ -547,12 +924,14 @@ function extendAction(x, y){
     return;
   }
 
+  const L = layers[current.layer];
+
   if (current.type === "path"){
     const pts = current.points;
     const last = pts[pts.length - 1];
     if (dist(last.x, last.y, p.x, p.y) < 0.8) return;
-    pts.push(p);
 
+    pts.push(p);
     if (pts.length >= 2){
       const a = pts[pts.length - 2];
       const b = pts[pts.length - 1];
@@ -563,11 +942,11 @@ function extendAction(x, y){
       const by = a.y + alpha * (b.y - a.y);
       pts[pts.length - 1] = { x:bx, y:by };
 
-      pg.push();
-      beginInk(pg, current.style);
-      drawStyledLine(pg, a.x, a.y, bx, by, current.style);
-      endInk(pg, current.style);
-      pg.pop();
+      L.pg.push();
+      beginInk(L.pg, current.style);
+      drawStyledLine(L.pg, a.x, a.y, bx, by, current.style);
+      endInk(L.pg, current.style);
+      L.pg.pop();
     }
   } else if (current.type === "line" || current.type === "arrow" || current.type === "rect"){
     current.b = p;
@@ -581,26 +960,29 @@ function finishAction(){
 
   if (current.type === "laser"){ current = null; return; }
 
+  const L = layers[current.layer];
+
   if (current.type === "path" && current.points.length === 1){
     const p = current.points[0];
-    pg.push();
+    L.pg.push();
     if (current.style.eraser){
-      pg.erase(); pg.noStroke(); pg.circle(p.x, p.y, current.style.weight); pg.noErase();
+      L.pg.erase(); L.pg.noStroke(); L.pg.circle(p.x, p.y, current.style.weight); L.pg.noErase();
     } else {
-      pg.noStroke(); pg.fill(current.style.color); pg.circle(p.x, p.y, current.style.weight);
+      L.pg.noStroke(); L.pg.fill(current.style.color); L.pg.circle(p.x, p.y, current.style.weight);
     }
-    pg.pop();
+    L.pg.pop();
   } else if (current.type !== "path"){
-    pg.push();
-    drawAction(current, pg, false);
-    pg.pop();
+    L.pg.push();
+    drawAction(current, L.pg, false);
+    L.pg.pop();
   }
 
-  actions.push(current);
+  L.actions.push(current);
   current = null;
   scheduleSave();
 }
 
+/* Drawing primitives */
 function beginInk(target, style){
   if (style.eraser){
     target.erase();
@@ -619,30 +1001,23 @@ function beginInk(target, style){
 function endInk(target, style){ if (style.eraser) target.noErase(); }
 
 function drawAction(a, target, isPreview){
-  if (a.type === "path"){
-    target.push();
-    beginInk(target, a.style);
-
-    const pts = a.points;
-    if (pts.length > 1){
-      if (isPreview && !a.style.eraser){
-        const col = color(a.style.color); col.setAlpha(160); target.stroke(col);
-      }
-      for (let i = 1; i < pts.length; i++){
-        drawStyledLine(target, pts[i-1].x, pts[i-1].y, pts[i].x, pts[i].y, a.style);
-      }
-    }
-
-    endInk(target, a.style);
-    target.pop();
-    return;
-  }
-
   target.push();
   beginInk(target, a.style);
 
   if (isPreview && !a.style.eraser){
     const col = color(a.style.color); col.setAlpha(160); target.stroke(col);
+  }
+
+  if (a.type === "path"){
+    const pts = a.points;
+    if (pts.length > 1){
+      for (let i = 1; i < pts.length; i++){
+        drawStyledLine(target, pts[i-1].x, pts[i-1].y, pts[i].x, pts[i].y, a.style);
+      }
+    }
+    endInk(target, a.style);
+    target.pop();
+    return;
   }
 
   if (a.type === "line"){
@@ -671,12 +1046,11 @@ function drawAction(a, target, isPreview){
   target.pop();
 }
 
-/* Styled line */
 function drawStyledLine(target, x1, y1, x2, y2, style){
   const mode = style.lineStyle || "solid";
   if (mode === "solid"){ target.line(x1, y1, x2, y2); return; }
 
-  const dx = x2 - x1, dy = y2 - y1;
+  const dx = x2-x1, dy = y2-y1;
   const len = Math.hypot(dx, dy);
   if (len < 0.001) return;
   const ux = dx/len, uy = dy/len;
@@ -734,50 +1108,55 @@ function drawStyledArrow(target, x1, y1, x2, y2, style){
   target.line(x2, y2, x4, y4);
 }
 
-function rebuildBuffer(){
-  pg.clear();
-  for (const a of actions){
-    pg.push();
-    drawAction(a, pg, false);
-    pg.pop();
+/* Rebuild */
+function rebuildLayerBuffer(i){
+  const L = layers[i];
+  L.pg.clear();
+  for (const a of L.actions){
+    L.pg.push();
+    drawAction(a, L.pg, false);
+    L.pg.pop();
   }
 }
+function rebuildAllBuffers(){
+  for (let i = 0; i < LAYER_COUNT; i++) rebuildLayerBuffer(i);
+}
 
+/* Laser */
 function updateLaserTrail(){
   const now = millis();
   laserTrail = laserTrail.filter(p => now - p.t < LASER_FADE_MS);
 }
 function drawLaserTrail(){
   if (!laserTrail.length) return;
+
   push(); noFill();
   for (let i=1;i<laserTrail.length;i++){
     const p=laserTrail[i-1], q=laserTrail[i];
     const age = millis() - q.t;
     const alpha = map(age, 0, LASER_FADE_MS, 180, 0, true);
-    stroke(255,0,0,alpha);
+    stroke(LASER_RED.r, LASER_RED.g, LASER_RED.b, alpha);
     strokeWeight(4); strokeCap(ROUND);
     line(p.x,p.y,q.x,q.y);
   }
   const last = laserTrail[laserTrail.length-1];
-  stroke(255,0,0,200);
+  stroke(LASER_RED.r, LASER_RED.g, LASER_RED.b, 200);
   strokeWeight(10);
   point(last.x,last.y);
   pop();
 }
 
+/* Export */
 function exportPNG(){
   const exportG = createGraphics(width, height);
   exportG.pixelDensity(1);
   exportG.clear();
-  exportG.image(pg, 0, 0);
 
-  if (includeGridInExport){
-    exportG.push();
-    exportG.stroke(0,40);
-    exportG.strokeWeight(1);
-    for (let x=0;x<width;x+=GRID_STEP) exportG.line(x,0,x,height);
-    for (let y=0;y<height;y+=GRID_STEP) exportG.line(0,y,width,y);
-    exportG.pop();
+  if (includeBgInExport) drawBackgroundOverlay(exportG);
+
+  for (let i = 0; i < LAYER_COUNT; i++){
+    if (!layers[i].visible) continue;
+    exportG.image(layers[i].pg, 0, 0);
   }
 
   const snap = get();
@@ -793,18 +1172,93 @@ function timestamp(){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
 }
 
-function windowResized(){
-  resizeCanvas(windowWidth, windowHeight);
-  const newPg = createGraphics(windowWidth, windowHeight);
-  newPg.pixelDensity(1);
-  newPg.clear();
-  newPg.image(pg, 0, 0);
-  pg = newPg;
+/* Storage */
+function saveToLocalStorage(){
+  try{
+    const payload = {
+      version: 2,
+      page: PAGE_ID,
+      bgMode,
+      includeBgInExport,
+      snapToGrid,
+      lineStyle,
+      strokeWidth,
+      smoothing,
+      currentColor,
+      activeLayer,
+      layers: layers.map(L => ({ visible: L.visible, actions: L.actions }))
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+  } catch(e){
+    console.warn("Could not save:", e);
+  }
 }
 
+function loadFromLocalStorage(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 2) return;
+
+    if (typeof data.bgMode === "string") bgMode = data.bgMode;
+    if (typeof data.includeBgInExport === "boolean") includeBgInExport = data.includeBgInExport;
+    if (typeof data.snapToGrid === "boolean") snapToGrid = data.snapToGrid;
+    if (typeof data.lineStyle === "string") lineStyle = data.lineStyle;
+    if (typeof data.strokeWidth === "number") strokeWidth = data.strokeWidth;
+    if (typeof data.smoothing === "number") smoothing = data.smoothing;
+    if (typeof data.currentColor === "string") currentColor = data.currentColor;
+    if (typeof data.activeLayer === "number") activeLayer = Math.max(0, Math.min(LAYER_COUNT - 1, data.activeLayer));
+
+    if (Array.isArray(data.layers)){
+      for (let i = 0; i < LAYER_COUNT; i++){
+        if (!data.layers[i]) continue;
+        if (typeof data.layers[i].visible === "boolean") layers[i].visible = data.layers[i].visible;
+        if (Array.isArray(data.layers[i].actions)) layers[i].actions = data.layers[i].actions;
+      }
+    }
+
+    // reflect UI
+    bgModeSel.value = bgMode;
+    includeBgEl.checked = includeBgInExport;
+    lineStyleSel.value = lineStyle;
+    strokeWidthSel.value = String(strokeWidth);
+    smoothingSel.value = String(smoothing);
+    snapEl.checked = snapToGrid;
+
+    setColor(currentColor);
+    updateActiveLayerBadge();
+    rebuildLayersMenu();
+  } catch(e){
+    console.warn("Could not load:", e);
+  }
+}
+
+/* Resize */
+function windowResized(){
+  resizeCanvas(windowWidth, windowHeight);
+  for (let i = 0; i < LAYER_COUNT; i++){
+    const old = layers[i].pg;
+    const ng = createGraphics(windowWidth, windowHeight);
+    ng.pixelDensity(1);
+    ng.clear();
+    ng.image(old, 0, 0);
+    layers[i].pg = ng;
+  }
+}
+
+/* Shortcuts */
 function keyPressed(){
-  if (key==='z'||key==='Z'){ if (actions.length){ actions.pop(); rebuildBuffer(); scheduleSave(); } }
-  else if (key==='s'||key==='S'){ exportPNG(); }
+  if (key === 'z' || key === 'Z'){
+    const L = layers[activeLayer];
+    if (L.actions.length){
+      L.actions.pop();
+      rebuildLayerBuffer(activeLayer);
+      scheduleSave();
+    }
+  } else if (key === 's' || key === 'S'){
+    exportPNG();
+  }
 }
 </script>
 </body>
