@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>p5 Whiteboard (transparent)</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/addons/p5.dom.min.js"></script>
+
+  <style>
+    :root{
+      --panel: rgba(255,255,255,0.92);
+      --border: rgba(0,0,0,0.12);
+      --text: rgba(0,0,0,0.85);
+      --shadow: 0 6px 18px rgba(0,0,0,0.10);
+      --radius: 12px;
+      --font: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    }
+
+    html, body{
+      margin:0; height:100%;
+      background: transparent;
+      font-family: var(--font);
+      color: var(--text);
+      overflow:hidden;
+    }
+
+    #canvas-wrap{ position:fixed; inset:0; z-index:1; background:transparent; }
+
+    #ui{
+      position:fixed;
+      top:10px; left:10px;
+      z-index:10;
+
+      display:inline-flex;
+      flex-wrap:wrap;
+      gap:8px;
+      align-items:center;
+
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:8px 10px;
+
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      user-select:none;
+
+      width: fit-content;
+      max-width: calc(100vw - 20px);
+    }
+
+    #collapseBtn{
+      width:28px; height:28px;
+      display:inline-flex; align-items:center; justify-content:center;
+      border:1px solid var(--border);
+      border-radius:999px;
+      background:white;
+      cursor:pointer;
+      font-size:14px;
+      line-height:1;
+      padding:0;
+    }
+
+    .tool{
+      border:1px solid var(--border);
+      background:white;
+      color:var(--text);
+      border-radius:999px;
+      padding:6px 10px;
+      font-size:12px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .tool.active{
+      background:rgba(0,0,0,0.92);
+      border-color:rgba(0,0,0,0.92);
+      color:white;
+    }
+
+    .sep{ width:1px; align-self:stretch; background:var(--border); margin:0 2px; }
+
+    select{
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:6px 10px;
+      background:white;
+      font-size:12px;
+      cursor:pointer;
+    }
+
+    .pill{
+      display:inline-flex; gap:6px; align-items:center;
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:6px 10px;
+      background:white;
+      font-size:12px;
+      cursor:pointer;
+      white-space:nowrap;
+    }
+    .pill input{ margin:0; }
+
+    button.action{
+      border:1px solid var(--border);
+      background:white;
+      color:var(--text);
+      border-radius:12px;
+      padding:7px 10px;
+      font-size:12px;
+      cursor:pointer;
+      transition:transform .05s ease, background .15s ease;
+      white-space:nowrap;
+    }
+    button.action:hover{ background:rgba(0,0,0,0.04); }
+    button.action:active{ transform:translateY(1px); }
+    button.action.primary{ background:rgba(0,0,0,0.92); color:white; border-color:rgba(0,0,0,0.92); }
+    button.action.primary:hover{ background:rgba(0,0,0,0.84); }
+
+    /* Color dropdown */
+    .color-select{
+      position:relative;
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      border:1px solid var(--border);
+      border-radius:999px;
+      padding:4px 8px;
+      background:white;
+      cursor:pointer;
+    }
+    .color-select .chip{
+      width:16px; height:16px;
+      border-radius:4px;
+      border:1px solid rgba(0,0,0,0.18);
+      box-sizing:border-box;
+    }
+    .color-select .caret{ opacity:.7; font-size:12px; margin-left:2px; }
+    .palette{
+      position:absolute;
+      top:110%;
+      left:0;
+      padding:8px;
+      background:white;
+      border:1px solid var(--border);
+      border-radius:12px;
+      box-shadow:var(--shadow);
+      display:none;
+      z-index:9999;
+    }
+    .palette.open{ display:block; }
+    .palette-grid{
+      display:grid;
+      grid-template-columns: repeat(6, 18px);
+      gap:8px;
+    }
+    .swatch{
+      width:18px; height:18px;
+      border-radius:4px;
+      border:1px solid rgba(0,0,0,0.18);
+      cursor:pointer;
+      box-sizing:border-box;
+    }
+    .swatch.active{
+      outline:2px solid rgba(0,0,0,0.75);
+      outline-offset:1px;
+    }
+
+    #ui.collapsed .advanced{ display:none !important; }
+  </style>
+</head>
+
+<body>
+  <div id="ui" class="collapsed">
+    <!-- Collapse/expand -->
+    <button id="collapseBtn" title="Collapse/expand toolbar">▸</button>
+
+    <!-- Essentials -->
+    <button class="tool" id="toolPen">Pen</button>
+    <button class="tool" id="toolEraser">Eraser</button>
+
+    <!-- Shapes dropdown is essential (line/arrow/circle/rect) -->
+    <select id="shapeTool" title="Shape tool">
+      <option value="" disabled selected>Shape</option>
+      <option value="line">Line</option>
+      <option value="arrow">Arrow</option>
+      <option value="circle">Circle</option>
+      <option value="rect">Rect</option>
+    </select>
+
+    <div class="color-select" id="colorSelect" title="Color">
+      <div class="chip" id="colorChip"></div>
+      <span class="caret">▾</span>
+      <div class="palette" id="palette">
+        <div class="palette-grid" id="paletteGrid"></div>
+      </div>
+    </div>
+
+    <!-- Advanced -->
+    <div class="sep advanced"></div>
+
+    <button class="tool advanced" id="toolLaser">Laser</button>
+
+    <select class="advanced" id="lineStyle" title="Line style">
+      <option value="solid">Solid</option>
+      <option value="dotted">Dotted</option>
+      <option value="dash">Dash</option>
+      <option value="dashdot">Dash-dot</option>
+    </select>
+
+    <select class="advanced" id="strokeWidth" title="Stroke width">
+      <option>1</option><option selected>2</option><option>3</option><option>4</option><option>5</option>
+      <option>8</option><option>10</option><option>20</option><option>30</option>
+    </select>
+
+    <select class="advanced" id="smoothing" title="Smoothing">
+      <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option>
+      <option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option>
+    </select>
+
+    <label class="pill advanced" title="Snap points to grid">
+      <input id="snap" type="checkbox" />
+      Snap
+    </label>
+
+    <button class="action advanced" id="undo" title="Undo">Undo</button>
+    <button class="action advanced" id="clear" title="Clear">Clear</button>
+
+    <button class="action primary advanced" id="save" title="Export PNG">Save PNG</button>
+    <label class="pill advanced" title="Include grid in PNG">
+      <input id="includeGrid" type="checkbox" />
+      Include grid
+    </label>
+  </div>
+
+  <div id="canvas-wrap"></div>
+
+<script>
+/* Core state */
+let pg, actions = [], current = null;
+let tool = "pen"; // pen | eraser | laser | line | arrow | circle | rect
+
+const GRID_STEP = 20;
+let snapToGrid = false;
+
+const TOOL_DEFAULT_SNAP = {
+  pen: false, eraser: false, laser: false,
+  line: true, arrow: true, circle: true, rect: true
+};
+
+let lineStyle = "solid";
+let strokeWidth = 2;
+let smoothing = 2;
+let currentColor = "#111111";
+let includeGridInExport = false;
+
+let lastNonEraserWidth = strokeWidth;
+
+let laserTrail = [];
+const LASER_FADE_MS = 450;
+
+// Storage
+const params = new URLSearchParams(location.search);
+const PAGE_ID = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
+const STORAGE_KEY = `p5_whiteboard_v11::${location.origin}${location.pathname}::page=${PAGE_ID}`;
+
+let saveTimer = null;
+function scheduleSave(){ if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveToLocalStorage, 160); }
+function saveToLocalStorage(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({version:11,page:PAGE_ID,actions})); }
+  catch(e){ console.warn("Could not save:", e); }
+}
+function loadFromLocalStorage(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!data || data.version !== 11 || !Array.isArray(data.actions)) return;
+    actions = data.actions;
+  } catch(e){ console.warn("Could not load:", e); }
+}
+
+/* UI refs */
+let ui, collapseBtn;
+let toolPenBtn, toolEraserBtn, toolLaserBtn, shapeToolSel;
+let lineStyleSel, strokeWidthSel, smoothingSel;
+let snapEl, undoBtn, clearBtn, saveBtn, includeGridEl;
+let colorSelect, palette, paletteGrid, colorChip;
+
+const COLORS = [
+  "#111111", "#FFFFFF", "#E69F00", "#56B4E9", "#009E73", "#F0E442",
+  "#0072B2", "#D55E00", "#CC79A7", "#00BFC4", "#FF00A8", "#8C564B"
+];
+
+function setup(){
+  const c = createCanvas(windowWidth, windowHeight);
+  c.parent("canvas-wrap");
+
+  pg = createGraphics(windowWidth, windowHeight);
+  pg.pixelDensity(1);
+  pg.clear();
+
+  initUI();
+  loadFromLocalStorage();
+  rebuildBuffer();
+
+  const canvasEl = document.querySelector("canvas");
+  if (canvasEl) canvasEl.style.touchAction = "none";
+
+  setTool("pen");
+}
+
+function draw(){
+  clear();
+  image(pg, 0, 0);
+  drawGridOverlay();
+  if (current && current.type !== "laser") drawAction(current, this, true);
+  updateLaserTrail();
+  drawLaserTrail();
+}
+
+function initUI(){
+  ui = document.getElementById("ui");
+  collapseBtn = document.getElementById("collapseBtn");
+
+  toolPenBtn = document.getElementById("toolPen");
+  toolEraserBtn = document.getElementById("toolEraser");
+  toolLaserBtn = document.getElementById("toolLaser");
+  shapeToolSel = document.getElementById("shapeTool");
+
+  lineStyleSel = document.getElementById("lineStyle");
+  strokeWidthSel = document.getElementById("strokeWidth");
+  smoothingSel = document.getElementById("smoothing");
+  snapEl = document.getElementById("snap");
+  undoBtn = document.getElementById("undo");
+  clearBtn = document.getElementById("clear");
+  saveBtn = document.getElementById("save");
+  includeGridEl = document.getElementById("includeGrid");
+
+  colorSelect = document.getElementById("colorSelect");
+  palette = document.getElementById("palette");
+  paletteGrid = document.getElementById("paletteGrid");
+  colorChip = document.getElementById("colorChip");
+
+  // Start collapsed (as requested). Allow persistence if you want later:
+  setCollapsed(true);
+
+  collapseBtn.addEventListener("click", () => setCollapsed(!ui.classList.contains("collapsed")));
+
+  toolPenBtn.addEventListener("click", () => {
+    shapeToolSel.selectedIndex = 0; // reset to "Shape"
+    setTool("pen");
+  });
+  toolEraserBtn.addEventListener("click", () => {
+    shapeToolSel.selectedIndex = 0;
+    setTool("eraser");
+  });
+  toolLaserBtn.addEventListener("click", () => {
+    shapeToolSel.selectedIndex = 0;
+    setTool("laser");
+  });
+
+  // FIX: use "input" so the FIRST selection (even if "line" was default previously) triggers immediately.
+  // Also we keep a disabled placeholder selected by default, so first choice always changes value.
+  shapeToolSel.addEventListener("input", () => setTool(shapeToolSel.value));
+  shapeToolSel.addEventListener("change", () => setTool(shapeToolSel.value));
+
+  lineStyleSel.addEventListener("change", () => lineStyle = lineStyleSel.value);
+
+  strokeWidthSel.value = String(strokeWidth);
+  strokeWidthSel.addEventListener("change", () => {
+    strokeWidth = parseInt(strokeWidthSel.value, 10);
+    if (tool !== "eraser") lastNonEraserWidth = strokeWidth;
+  });
+
+  smoothingSel.value = String(smoothing);
+  smoothingSel.addEventListener("change", () => smoothing = parseInt(smoothingSel.value, 10));
+
+  snapEl.addEventListener("change", () => snapToGrid = snapEl.checked);
+  includeGridEl.addEventListener("change", () => includeGridInExport = includeGridEl.checked);
+
+  undoBtn.addEventListener("click", () => {
+    if (actions.length){ actions.pop(); rebuildBuffer(); scheduleSave(); }
+  });
+
+  clearBtn.addEventListener("click", () => {
+    const ok = confirm("Really delete everything on this whiteboard?\n\nThis cannot be undone.");
+    if (!ok) return;
+    actions = [];
+    pg.clear();
+    scheduleSave();
+  });
+
+  saveBtn.addEventListener("click", () => exportPNG());
+
+  buildPalette();
+  setColor(currentColor);
+
+  document.addEventListener("pointerdown", (ev) => {
+    if (!colorSelect.contains(ev.target)) palette.classList.remove("open");
+  });
+
+  colorSelect.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    palette.classList.toggle("open");
+  });
+}
+
+function setCollapsed(collapsed){
+  ui.classList.toggle("collapsed", collapsed);
+  collapseBtn.textContent = collapsed ? "▸" : "▾";
+}
+
+function buildPalette(){
+  paletteGrid.innerHTML = "";
+  COLORS.forEach(hex => {
+    const d = document.createElement("div");
+    d.className = "swatch";
+    d.style.background = hex;
+    d.title = hex;
+    d.addEventListener("click", (ev) => {
+      ev.stopPropagation();
+      setColor(hex);
+      palette.classList.remove("open");
+    });
+    paletteGrid.appendChild(d);
+  });
+}
+
+function setColor(hex){
+  currentColor = hex;
+  colorChip.style.background = hex;
+
+  const sw = paletteGrid.querySelectorAll(".swatch");
+  sw.forEach(el => {
+    const bg = rgbToHex(getComputedStyle(el).backgroundColor);
+    el.classList.toggle("active", bg === hex.toUpperCase());
+  });
+}
+
+function rgbToHex(rgb){
+  const m = rgb.match(/\d+/g);
+  if (!m || m.length < 3) return "#000000";
+  const to2 = (n) => Number(n).toString(16).padStart(2, "0").toUpperCase();
+  return `#${to2(m[0])}${to2(m[1])}${to2(m[2])}`;
+}
+
+/* Tool switching */
+function setTool(t){
+  current = null;
+  tool = t;
+
+  toolPenBtn.classList.toggle("active", tool === "pen");
+  toolEraserBtn.classList.toggle("active", tool === "eraser");
+  toolLaserBtn.classList.toggle("active", tool === "laser");
+
+  // tool default snap
+  snapToGrid = !!TOOL_DEFAULT_SNAP[tool];
+  snapEl.checked = snapToGrid;
+
+  // eraser width rules
+  if (tool === "eraser"){
+    lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
+    strokeWidth = 10;
+    strokeWidthSel.value = "10";
+  } else {
+    strokeWidth = lastNonEraserWidth ?? 2;
+    strokeWidthSel.value = String(strokeWidth);
+  }
+
+  // keep dropdown synced (if a shape tool is selected)
+  if (tool === "line" || tool === "arrow" || tool === "circle" || tool === "rect"){
+    // find option and select it (won't select placeholder)
+    const idx = Array.from(shapeToolSel.options).findIndex(o => o.value === tool);
+    if (idx >= 0) shapeToolSel.selectedIndex = idx;
+  }
+}
+
+/* Grid + snap */
+function drawGridOverlay(){
+  push();
+  stroke(0, 40);
+  strokeWeight(1);
+  for (let x = 0; x < width; x += GRID_STEP) line(x, 0, x, height);
+  for (let y = 0; y < height; y += GRID_STEP) line(0, y, width, y);
+  pop();
+}
+function snapPoint(x, y){
+  if (!snapToGrid) return {x, y};
+  return { x: Math.round(x / GRID_STEP) * GRID_STEP, y: Math.round(y / GRID_STEP) * GRID_STEP };
+}
+
+/* Input */
+function mousePressed(){ if (isPointerOverUI()) return; startAction(mouseX, mouseY); }
+function mouseDragged(){ if (!current) return; extendAction(mouseX, mouseY); }
+function mouseReleased(){ finishAction(); }
+
+function touchStarted(){ if (isPointerOverUI()) return true; startAction(mouseX, mouseY); return false; }
+function touchMoved(){ if (!current) return true; extendAction(mouseX, mouseY); return false; }
+function touchEnded(){ if (isPointerOverUI()) return true; finishAction(); return false; }
+
+function isPointerOverUI(){
+  const r = ui.getBoundingClientRect();
+  const x = mouseX, y = mouseY;
+  return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+}
+
+/* Actions */
+function makeStyle(){
+  const w = strokeWidth;
+  if (tool === "eraser") return { weight:w, color:null, eraser:true, lineStyle, smoothing };
+  return { weight:w, color:currentColor, eraser:false, lineStyle, smoothing };
+}
+
+function startAction(x, y){
+  const p0 = snapPoint(x, y);
+
+  if (tool === "laser"){
+    laserTrail.push({ x:p0.x, y:p0.y, t: millis() });
+    current = { type:"laser" };
+    return;
+  }
+
+  const style = makeStyle();
+
+  if (tool === "pen" || tool === "eraser"){
+    current = { type:"path", style, points:[p0] };
+  } else if (tool === "line"){
+    current = { type:"line", style, a:p0, b:p0 };
+  } else if (tool === "arrow"){
+    current = { type:"arrow", style, a:p0, b:p0 };
+  } else if (tool === "circle"){
+    current = { type:"circle", style, c:p0, r:0 };
+  } else if (tool === "rect"){
+    current = { type:"rect", style, a:p0, b:p0 };
+  }
+}
+
+function extendAction(x, y){
+  if (!current) return;
+  const p = snapPoint(x, y);
+
+  if (current.type === "laser"){
+    laserTrail.push({ x:p.x, y:p.y, t: millis() });
+    return;
+  }
+
+  if (current.type === "path"){
+    const pts = current.points;
+    const last = pts[pts.length - 1];
+    if (dist(last.x, last.y, p.x, p.y) < 0.8) return;
+    pts.push(p);
+
+    if (pts.length >= 2){
+      const a = pts[pts.length - 2];
+      const b = pts[pts.length - 1];
+
+      const sm = current.style.smoothing || 1;
+      const alpha = (sm <= 1) ? 1 : (2 / (sm + 1));
+      const bx = a.x + alpha * (b.x - a.x);
+      const by = a.y + alpha * (b.y - a.y);
+      pts[pts.length - 1] = { x:bx, y:by };
+
+      pg.push();
+      beginInk(pg, current.style);
+      drawStyledLine(pg, a.x, a.y, bx, by, current.style);
+      endInk(pg, current.style);
+      pg.pop();
+    }
+  } else if (current.type === "line" || current.type === "arrow" || current.type === "rect"){
+    current.b = p;
+  } else if (current.type === "circle"){
+    current.r = dist(current.c.x, current.c.y, p.x, p.y);
+  }
+}
+
+function finishAction(){
+  if (!current) return;
+
+  if (current.type === "laser"){ current = null; return; }
+
+  if (current.type === "path" && current.points.length === 1){
+    const p = current.points[0];
+    pg.push();
+    if (current.style.eraser){
+      pg.erase(); pg.noStroke(); pg.circle(p.x, p.y, current.style.weight); pg.noErase();
+    } else {
+      pg.noStroke(); pg.fill(current.style.color); pg.circle(p.x, p.y, current.style.weight);
+    }
+    pg.pop();
+  } else if (current.type !== "path"){
+    pg.push();
+    drawAction(current, pg, false);
+    pg.pop();
+  }
+
+  actions.push(current);
+  current = null;
+  scheduleSave();
+}
+
+function beginInk(target, style){
+  if (style.eraser){
+    target.erase();
+    target.stroke(0);
+    target.strokeWeight(style.weight);
+    target.strokeCap(ROUND);
+    target.noFill();
+  } else {
+    target.noErase();
+    target.stroke(style.color);
+    target.strokeWeight(style.weight);
+    target.strokeCap(ROUND);
+    target.noFill();
+  }
+}
+function endInk(target, style){ if (style.eraser) target.noErase(); }
+
+function drawAction(a, target, isPreview){
+  if (a.type === "path"){
+    target.push();
+    beginInk(target, a.style);
+
+    const pts = a.points;
+    if (pts.length > 1){
+      if (isPreview && !a.style.eraser){
+        const col = color(a.style.color); col.setAlpha(160); target.stroke(col);
+      }
+      for (let i = 1; i < pts.length; i++){
+        drawStyledLine(target, pts[i-1].x, pts[i-1].y, pts[i].x, pts[i].y, a.style);
+      }
+    }
+
+    endInk(target, a.style);
+    target.pop();
+    return;
+  }
+
+  target.push();
+  beginInk(target, a.style);
+
+  if (isPreview && !a.style.eraser){
+    const col = color(a.style.color); col.setAlpha(160); target.stroke(col);
+  }
+
+  if (a.type === "line"){
+    drawStyledLine(target, a.a.x, a.a.y, a.b.x, a.b.y, a.style);
+  } else if (a.type === "arrow"){
+    drawStyledArrow(target, a.a.x, a.a.y, a.b.x, a.b.y, a.style);
+  } else if (a.type === "circle"){
+    target.noErase();
+    target.stroke(a.style.eraser ? 0 : a.style.color);
+    if (isPreview && !a.style.eraser){ const col = color(a.style.color); col.setAlpha(160); target.stroke(col); }
+    target.noFill();
+    target.circle(a.c.x, a.c.y, 2*a.r);
+  } else if (a.type === "rect"){
+    const x = Math.min(a.a.x, a.b.x);
+    const y = Math.min(a.a.y, a.b.y);
+    const w = Math.abs(a.b.x - a.a.x);
+    const h = Math.abs(a.b.y - a.a.y);
+    target.noErase();
+    target.stroke(a.style.eraser ? 0 : a.style.color);
+    if (isPreview && !a.style.eraser){ const col = color(a.style.color); col.setAlpha(160); target.stroke(col); }
+    target.noFill();
+    target.rect(x, y, w, h);
+  }
+
+  endInk(target, a.style);
+  target.pop();
+}
+
+/* Styled line */
+function drawStyledLine(target, x1, y1, x2, y2, style){
+  const mode = style.lineStyle || "solid";
+  if (mode === "solid"){ target.line(x1, y1, x2, y2); return; }
+
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  if (len < 0.001) return;
+  const ux = dx/len, uy = dy/len;
+
+  const w = Math.max(1, style.weight || 1);
+  const dotGap = 6 + 0.6*w;
+  const dashLen = 10 + 1.2*w;
+  const gapLen  = 6 + 0.8*w;
+
+  let t = 0;
+  const drawDash = (a,b) => target.line(x1+ux*a, y1+uy*a, x1+ux*b, y1+uy*b);
+  const drawDot  = (at) => { target.push(); target.strokeCap(ROUND); target.point(x1+ux*at, y1+uy*at); target.pop(); };
+
+  if (mode === "dotted"){
+    target.push(); target.strokeCap(ROUND); target.strokeWeight(w);
+    while (t <= len){ drawDot(t); t += dotGap; }
+    target.pop();
+    return;
+  }
+
+  if (mode === "dash"){
+    while (t < len){
+      const a=t, b=Math.min(len, t+dashLen);
+      drawDash(a,b);
+      t += dashLen + gapLen;
+    }
+    return;
+  }
+
+  // dashdot
+  while (t < len){
+    let a=t, b=Math.min(len, t+dashLen);
+    drawDash(a,b);
+    t += dashLen + gapLen;
+    if (t >= len) break;
+    drawDot(t);
+    t += dotGap;
+  }
+}
+
+function drawStyledArrow(target, x1, y1, x2, y2, style){
+  drawStyledLine(target, x1, y1, x2, y2, style);
+
+  const ang = Math.atan2(y2-y1, x2-x1);
+  const w = Math.max(1, style.weight || 1);
+  const headLen = Math.max(10, 3.2*w);
+  const headAng = (28*Math.PI)/180;
+
+  const x3 = x2 - headLen*Math.cos(ang - headAng);
+  const y3 = y2 - headLen*Math.sin(ang - headAng);
+  const x4 = x2 - headLen*Math.cos(ang + headAng);
+  const y4 = y2 - headLen*Math.sin(ang + headAng);
+
+  target.line(x2, y2, x3, y3);
+  target.line(x2, y2, x4, y4);
+}
+
+function rebuildBuffer(){
+  pg.clear();
+  for (const a of actions){
+    pg.push();
+    drawAction(a, pg, false);
+    pg.pop();
+  }
+}
+
+function updateLaserTrail(){
+  const now = millis();
+  laserTrail = laserTrail.filter(p => now - p.t < LASER_FADE_MS);
+}
+function drawLaserTrail(){
+  if (!laserTrail.length) return;
+  push(); noFill();
+  for (let i=1;i<laserTrail.length;i++){
+    const p=laserTrail[i-1], q=laserTrail[i];
+    const age = millis() - q.t;
+    const alpha = map(age, 0, LASER_FADE_MS, 180, 0, true);
+    stroke(255,0,0,alpha);
+    strokeWeight(4); strokeCap(ROUND);
+    line(p.x,p.y,q.x,q.y);
+  }
+  const last = laserTrail[laserTrail.length-1];
+  stroke(255,0,0,200);
+  strokeWeight(10);
+  point(last.x,last.y);
+  pop();
+}
+
+function exportPNG(){
+  const exportG = createGraphics(width, height);
+  exportG.pixelDensity(1);
+  exportG.clear();
+  exportG.image(pg, 0, 0);
+
+  if (includeGridInExport){
+    exportG.push();
+    exportG.stroke(0,40);
+    exportG.strokeWeight(1);
+    for (let x=0;x<width;x+=GRID_STEP) exportG.line(x,0,x,height);
+    for (let y=0;y<height;y+=GRID_STEP) exportG.line(0,y,width,y);
+    exportG.pop();
+  }
+
+  const snap = get();
+  clear();
+  image(exportG, 0, 0);
+  saveCanvas(`whiteboard-${sanitize(PAGE_ID)}-${timestamp()}`, "png");
+  image(snap, 0, 0);
+}
+
+function sanitize(s){ return String(s).replace(/[^\w\-]+/g, "_").slice(0, 60) || "page"; }
+function timestamp(){
+  const d=new Date(); const pad=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
+}
+
+function windowResized(){
+  resizeCanvas(windowWidth, windowHeight);
+  const newPg = createGraphics(windowWidth, windowHeight);
+  newPg.pixelDensity(1);
+  newPg.clear();
+  newPg.image(pg, 0, 0);
+  pg = newPg;
+}
+
+function keyPressed(){
+  if (key==='z'||key==='Z'){ if (actions.length){ actions.pop(); rebuildBuffer(); scheduleSave(); } }
+  else if (key==='s'||key==='S'){ exportPNG(); }
+}
+</script>
+</body>
+</html>
