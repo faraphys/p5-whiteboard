@@ -131,6 +131,22 @@
       box-sizing:border-box;
     }
 
+    button.action{
+      border:1px solid var(--border);
+      background:white;
+      color:var(--text);
+      border-radius:12px;
+      padding:8px 10px;
+      font-size:12px;
+      cursor:pointer;
+      white-space:nowrap;
+      transition: transform .05s ease, background .12s ease;
+      width:100%;
+      box-sizing:border-box;
+    }
+    button.action:hover{ background: rgba(0,0,0,0.04); }
+    button.action:active{ transform: translateY(1px); }
+
     .pill{
       display:flex;
       align-items:center;
@@ -147,22 +163,6 @@
       justify-content:flex-start;
     }
     .pill input{ margin:0; }
-
-    button.action{
-      border:1px solid var(--border);
-      background:white;
-      color:var(--text);
-      border-radius:12px;
-      padding:8px 10px;
-      font-size:12px;
-      cursor:pointer;
-      white-space:nowrap;
-      transition: transform .05s ease, background .12s ease;
-      width:100%;
-      box-sizing:border-box;
-    }
-    button.action:hover{ background: rgba(0,0,0,0.04); }
-    button.action:active{ transform: translateY(1px); }
 
     .color-select{
       position:relative;
@@ -296,6 +296,15 @@
     .layer-item.invisible .layer-name{ opacity:0.45; text-decoration: line-through; }
     .layer-item.invisible .vis-dot{ opacity:0.25; }
 
+    /* tiny status line */
+    #status{
+      font-size:11px;
+      opacity:.75;
+      line-height:1.15;
+      padding:2px 2px 0 2px;
+      min-height: 14px;
+    }
+
     #ui, #ui * { touch-action: none; }
   </style>
 </head>
@@ -347,7 +356,6 @@
       <option value="dashdot">Dash-dot</option>
     </select>
 
-    <!-- Width labels now "w ..." -->
     <select class="advanced" id="strokeWidth" title="Stroke width">
       <option value="1">w 1</option>
       <option value="2" selected>w 2</option>
@@ -373,7 +381,6 @@
       <option value="10">α 10</option>
     </select>
 
-    <!-- Smoothing labels now "s ..." -->
     <select class="advanced" id="smoothing" title="Smoothing (1 = none, 10 = strong)">
       <option value="1">s 1</option>
       <option value="2" selected>s 2</option>
@@ -392,27 +399,28 @@
       Snap
     </label>
 
-    <div class="layers-select advanced" id="layersSelect" title="Layers: click a layer to toggle visibility and select it">
+    <div class="layers-select advanced" id="layersSelect" title="Layers: click to select, click again on same layer to toggle visibility">
       <div style="font-size:12px; opacity:.85;" id="layersLabel">Layers</div>
       <div class="caret">▾</div>
       <div class="layers-menu" id="layersMenu"></div>
     </div>
 
-    <button class="action advanced" id="undo" title="Undo (active layer)">Undo</button>
-    <button class="action advanced" id="clear" title="Clear (all layers)">Clear</button>
-
-    <label class="pill advanced" title="Show background overlay (grid/dots)">
-      <input id="bgOn" type="checkbox" checked />
-      Backgr.
+    <button class="action advanced" id="copy" title="Copy to clipboard (PNG)">Copy</button>
+    <label class="pill advanced" title="Include background grid/dots in copied image">
+      <input id="copyBg" type="checkbox" />
+      Grid
     </label>
+
+    <div id="status" class="advanced"></div>
+
+    <button class="action advanced" id="undo" title="Undo (active layer)">Undo</button>
+    <button class="action advanced" id="clear" title="Clear (active layer, undoable)">Clear</button>
   </div>
 
   <div id="canvas-wrap"></div>
   <div id="canvas-outline"></div>
 
 <script>
-/* (JS unchanged except it reads numeric values from dropdowns; kept compatible.) */
-
 const GRID_STEP = 20;
 const LASER_RED = { r: 215, g: 38, b: 61 }; // #D7263D
 
@@ -436,8 +444,8 @@ let currentColor = COLORS[0];
 let lastNonEraserWidth = strokeWidth;
 let snapToGrid = false;
 
-let bgMode = "transparent";
-let bgOn = true;
+let bgMode = "transparent"; // on-screen background overlay mode
+let copyIncludeBg = false;  // include bg overlay in clipboard image?
 
 const LAYER_COUNT = 3;
 let layers = [];
@@ -445,13 +453,16 @@ let activeLayer = 0;
 
 let current = null;
 
+const CLEAR_UNDO_WINDOW = 12;
+let softClearStack = Array.from({length:LAYER_COUNT}, () => []);
+
 let laserTrail = [];
 const LASER_FADE_MS = 450;
 
 const params = new URLSearchParams(location.search);
 const PAGE_ID = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
-const STORAGE_KEY = `p5_whiteboard_layers_v4::${location.origin}${location.pathname}::page=${PAGE_ID}`;
-const UI_POS_KEY = `p5_whiteboard_ui_pos_v4::${location.origin}${location.pathname}`;
+const STORAGE_KEY = `p5_whiteboard_layers_v7::${location.origin}${location.pathname}::page=${PAGE_ID}`;
+const UI_POS_KEY = `p5_whiteboard_ui_pos_v7::${location.origin}${location.pathname}`;
 
 let saveTimer = null;
 function scheduleSave() {
@@ -467,8 +478,9 @@ function alphaFromLevel(level){
 /* UI refs */
 let ui, dragHandle, collapseBtn;
 let toolPenBtn, toolEraserBtn, toolLaserBtn, shapeToolSel;
-let bgModeSel, bgOnEl, lineStyleSel, strokeWidthSel, alphaSel, smoothingSel;
+let bgModeSel, lineStyleSel, strokeWidthSel, alphaSel, smoothingSel;
 let snapEl, undoBtn, clearBtn;
+let copyBtn, copyBgEl, statusEl;
 let colorSelect, palette, paletteGrid, colorChip;
 let layersSelect, layersMenu, layersLabel;
 
@@ -497,7 +509,7 @@ function setup() {
 
 function draw() {
   clear();
-  drawBackgroundOverlay(this);
+  drawBackgroundOverlay(this, bgMode);
 
   for (let i = 0; i < LAYER_COUNT; i++) {
     if (!layers[i].visible) continue;
@@ -510,6 +522,7 @@ function draw() {
   drawLaserTrail();
 }
 
+/* ---------- UI ---------- */
 function initUI() {
   ui = document.getElementById("ui");
   dragHandle = document.getElementById("dragHandle");
@@ -526,7 +539,6 @@ function initUI() {
   colorChip = document.getElementById("colorChip");
 
   bgModeSel = document.getElementById("bgMode");
-  bgOnEl = document.getElementById("bgOn");
   lineStyleSel = document.getElementById("lineStyle");
   strokeWidthSel = document.getElementById("strokeWidth");
   alphaSel = document.getElementById("alphaLevel");
@@ -536,6 +548,10 @@ function initUI() {
   layersSelect = document.getElementById("layersSelect");
   layersMenu = document.getElementById("layersMenu");
   layersLabel = document.getElementById("layersLabel");
+
+  copyBtn = document.getElementById("copy");
+  copyBgEl = document.getElementById("copyBg");
+  statusEl = document.getElementById("status");
 
   undoBtn = document.getElementById("undo");
   clearBtn = document.getElementById("clear");
@@ -561,7 +577,6 @@ function initUI() {
   shapeToolSel.addEventListener("change", () => setTool(shapeToolSel.value));
 
   bgModeSel.addEventListener("change", () => { bgMode = bgModeSel.value; scheduleSave(); });
-  bgOnEl.addEventListener("change", () => { bgOn = bgOnEl.checked; scheduleSave(); });
 
   lineStyleSel.addEventListener("change", () => { lineStyle = lineStyleSel.value; scheduleSave(); });
 
@@ -580,23 +595,12 @@ function initUI() {
 
   snapEl.addEventListener("change", () => { snapToGrid = snapEl.checked; scheduleSave(); });
 
-  undoBtn.addEventListener("click", () => {
-    const L = layers[activeLayer];
-    if (!L.actions.length) return;
-    L.actions.pop();
-    rebuildLayerBuffer(activeLayer);
-    scheduleSave();
-  });
+  copyBgEl.addEventListener("change", () => { copyIncludeBg = copyBgEl.checked; scheduleSave(); });
 
-  clearBtn.addEventListener("click", () => {
-    const ok = confirm("Really delete everything on ALL layers?\n\nThis cannot be undone.");
-    if (!ok) return;
-    for (let i = 0; i < LAYER_COUNT; i++) {
-      layers[i].actions = [];
-      layers[i].pg.clear();
-    }
-    scheduleSave();
-  });
+  copyBtn.addEventListener("click", () => copyToClipboard());
+
+  undoBtn.addEventListener("click", () => undoActiveLayer());
+  clearBtn.addEventListener("click", () => softClearActiveLayer());
 
   document.addEventListener("pointerdown", (ev) => {
     const inColor = colorSelect.contains(ev.target);
@@ -625,6 +629,16 @@ function setCollapsed(collapsed) {
   collapseBtn.textContent = collapsed ? "▸" : "▾";
 }
 
+/* ---------- Status ---------- */
+let statusTimer = null;
+function setStatus(msg){
+  if (!statusEl) return;
+  statusEl.textContent = msg || "";
+  if (statusTimer) clearTimeout(statusTimer);
+  if (msg) statusTimer = setTimeout(() => { statusEl.textContent = ""; }, 2600);
+}
+
+/* ---------- Palette ---------- */
 function buildPalette() {
   paletteGrid.innerHTML = "";
   COLORS.forEach(hex => {
@@ -660,6 +674,7 @@ function rgbToHex(rgb) {
   return `#${to2(m[0])}${to2(m[1])}${to2(m[2])}`;
 }
 
+/* ---------- Layers menu ---------- */
 function updateLayersLabel(){
   const vis = layers[activeLayer]?.visible ? "on" : "off";
   layersLabel.textContent = `Layers (${activeLayer + 1}:${vis})`;
@@ -700,8 +715,13 @@ function rebuildLayersMenu() {
 
     item.addEventListener("pointerdown", (ev) => {
       ev.stopPropagation();
-      layers[i].visible = !layers[i].visible;
-      activeLayer = i;
+
+      if (activeLayer !== i) {
+        activeLayer = i;                 // first click: select only
+      } else {
+        layers[i].visible = !layers[i].visible; // second click on same layer: toggle
+      }
+
       updateLayersLabel();
       rebuildLayersMenu();
       layersMenu.classList.remove("open");
@@ -712,6 +732,7 @@ function rebuildLayersMenu() {
   }
 }
 
+/* ---------- Toolbar drag ---------- */
 function initDrag() {
   try {
     const raw = localStorage.getItem(UI_POS_KEY);
@@ -773,6 +794,7 @@ function initDrag() {
   });
 }
 
+/* ---------- Tool switching ---------- */
 function setTool(t) {
   if (!t) return;
   current = null;
@@ -800,11 +822,11 @@ function setTool(t) {
   }
 }
 
-function drawBackgroundOverlay(target) {
-  if (!bgOn) return;
-  if (bgMode === "transparent") return;
+/* ---------- Background overlay ---------- */
+function drawBackgroundOverlay(target, mode) {
+  if (mode === "transparent") return;
 
-  if (bgMode === "grid") {
+  if (mode === "grid") {
     target.push();
     target.stroke(0, 40);
     target.strokeWeight(1);
@@ -814,6 +836,7 @@ function drawBackgroundOverlay(target) {
     return;
   }
 
+  // dots
   target.push();
   target.noStroke();
   target.fill(0, 55);
@@ -826,17 +849,20 @@ function drawBackgroundOverlay(target) {
   target.pop();
 }
 
+/* ---------- Snap ---------- */
 function snapPoint(x, y) {
   if (!snapToGrid) return { x, y };
   return { x: Math.round(x / GRID_STEP) * GRID_STEP, y: Math.round(y / GRID_STEP) * GRID_STEP };
 }
 
+/* ---------- Pointer over UI ---------- */
 function isPointerOverUI() {
   const r = ui.getBoundingClientRect();
   const x = mouseX, y = mouseY;
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
+/* ---------- Input ---------- */
 function mousePressed() { if (isPointerOverUI()) return; startAction(mouseX, mouseY); }
 function mouseDragged() { if (!current) return; extendAction(mouseX, mouseY); }
 function mouseReleased() { finishAction(); }
@@ -845,6 +871,100 @@ function touchStarted() { if (isPointerOverUI()) return true; startAction(mouseX
 function touchMoved() { if (!current) return true; extendAction(mouseX, mouseY); return false; }
 function touchEnded() { if (isPointerOverUI()) return true; finishAction(); return false; }
 
+/* ---------- Soft clear ---------- */
+function bumpSoftClearCountdowns() {
+  const S = softClearStack[activeLayer];
+  if (!S.length) return;
+  for (const entry of S) entry.countdown--;
+  while (S.length && S[0].countdown <= 0) S.shift();
+}
+
+function softClearActiveLayer() {
+  const L = layers[activeLayer];
+  if (L.actions.length === 0) return;
+
+  softClearStack[activeLayer].push({
+    prevActions: L.actions.slice(),
+    countdown: CLEAR_UNDO_WINDOW
+  });
+
+  L.actions = [];
+  L.pg.clear();
+
+  bumpSoftClearCountdowns();
+  scheduleSave();
+}
+
+function undoActiveLayer() {
+  const L = layers[activeLayer];
+
+  if (L.actions.length > 0) {
+    L.actions.pop();
+    rebuildLayerBuffer(activeLayer);
+    scheduleSave();
+    return;
+  }
+
+  const stack = softClearStack[activeLayer];
+  if (stack.length > 0) {
+    const entry = stack.pop();
+    L.actions = entry.prevActions.slice();
+    rebuildLayerBuffer(activeLayer);
+    scheduleSave();
+  }
+}
+
+/* ---------- Clipboard copy (Option B) ---------- */
+async function copyToClipboard(){
+  try{
+    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+      setStatus("Clipboard not available here.");
+      return;
+    }
+
+    // render a composite image to an offscreen p5 graphics
+    const g = createGraphics(width, height);
+    g.pixelDensity(1);
+    g.clear();
+
+    // optional background overlay (grid/dots) — checkbox controls this
+    const modeForCopy = copyIncludeBg ? bgMode : "transparent";
+    drawBackgroundOverlay(g, modeForCopy);
+
+    // draw visible layers
+    for (let i = 0; i < LAYER_COUNT; i++){
+      if (!layers[i].visible) continue;
+      g.image(layers[i].pg, 0, 0);
+    }
+
+    // note: we do NOT include the live preview stroke or laser pointer in the copy
+
+    const blob = await canvasToPngBlob(g.canvas);
+    await navigator.clipboard.write([ new ClipboardItem({ "image/png": blob }) ]);
+
+    setStatus("Copied. Paste into OneNote.");
+    // cleanup
+    g.remove();
+  } catch (e){
+    // common failures in iframes: NotAllowedError, SecurityError
+    setStatus("Copy blocked (iframe). Use screenshot.");
+  }
+}
+
+function canvasToPngBlob(canvasEl){
+  return new Promise((resolve, reject) => {
+    try{
+      canvasEl.toBlob((blob) => {
+        if (!blob) reject(new Error("toBlob failed"));
+        else resolve(blob);
+      }, "image/png");
+    } catch (e){
+      reject(e);
+    }
+  });
+}
+
+/* ---------- Actions model ---------- */
 function makeStyle() {
   const w = strokeWidth;
   const a = alphaFromLevel(alphaLevel);
@@ -944,9 +1064,12 @@ function finishAction() {
 
   L.actions.push(current);
   current = null;
+
+  bumpSoftClearCountdowns();
   scheduleSave();
 }
 
+/* ---------- Drawing primitives ---------- */
 function beginInk(target, style) {
   if (style.eraser) {
     target.erase();
@@ -1047,7 +1170,6 @@ function drawStyledLine(target, x1, y1, x2, y2, style) {
     return;
   }
 
-  // dashdot
   while (t < len) {
     let a = t;
     let b = Math.min(len, t + dashLen);
@@ -1076,6 +1198,7 @@ function drawStyledArrow(target, x1, y1, x2, y2, style) {
   target.line(x2, y2, x4, y4);
 }
 
+/* ---------- Rebuild buffers ---------- */
 function rebuildLayerBuffer(i) {
   const L = layers[i];
   L.pg.clear();
@@ -1087,6 +1210,7 @@ function rebuildLayerBuffer(i) {
 }
 function rebuildAllBuffers() { for (let i = 0; i < LAYER_COUNT; i++) rebuildLayerBuffer(i); }
 
+/* ---------- Laser ---------- */
 function updateLaserTrail() {
   const now = millis();
   laserTrail = laserTrail.filter(p => now - p.t < LASER_FADE_MS);
@@ -1109,13 +1233,14 @@ function drawLaserTrail() {
   pop();
 }
 
+/* ---------- Storage ---------- */
 function saveToLocalStorage() {
   try {
     const payload = {
-      version: 4,
+      version: 7,
       page: PAGE_ID,
       bgMode,
-      bgOn,
+      copyIncludeBg,
       snapToGrid,
       lineStyle,
       strokeWidth,
@@ -1124,6 +1249,7 @@ function saveToLocalStorage() {
       currentColor,
       activeLayer,
       layers: layers.map(L => ({ visible: L.visible, actions: L.actions }))
+      // softClearStack intentionally not persisted
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch (e) {}
@@ -1134,10 +1260,11 @@ function loadFromLocalStorage() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 4) return;
+    if (!data || data.version !== 7) return;
 
     if (typeof data.bgMode === "string") bgMode = data.bgMode;
-    if (typeof data.bgOn === "boolean") bgOn = data.bgOn;
+    if (typeof data.copyIncludeBg === "boolean") copyIncludeBg = data.copyIncludeBg;
+
     if (typeof data.snapToGrid === "boolean") snapToGrid = data.snapToGrid;
     if (typeof data.lineStyle === "string") lineStyle = data.lineStyle;
     if (typeof data.strokeWidth === "number") strokeWidth = data.strokeWidth;
@@ -1155,7 +1282,8 @@ function loadFromLocalStorage() {
     }
 
     bgModeSel.value = bgMode;
-    bgOnEl.checked = bgOn;
+    copyBgEl.checked = copyIncludeBg;
+
     lineStyleSel.value = lineStyle;
     strokeWidthSel.value = String(strokeWidth);
     alphaSel.value = String(alphaLevel);
@@ -1180,15 +1308,9 @@ function windowResized() {
   }
 }
 
+/* Shortcuts */
 function keyPressed() {
-  if (key === 'z' || key === 'Z') {
-    const L = layers[activeLayer];
-    if (L.actions.length) {
-      L.actions.pop();
-      rebuildLayerBuffer(activeLayer);
-      scheduleSave();
-    }
-  }
+  if (key === 'z' || key === 'Z') undoActiveLayer();
 }
 </script>
 </body>
