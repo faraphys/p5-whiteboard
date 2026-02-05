@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>p5 Whiteboard (transparent, layers)</title>
+  <title>p5 Whiteboard (transparent, layers, clipboard copy)</title>
 
   <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
 
@@ -27,6 +27,7 @@
 
     #canvas-wrap{ position:fixed; inset:0; z-index:1; background:transparent; }
 
+    /* thin outline so students see the active writing area */
     #canvas-outline{
       position:fixed;
       inset:0;
@@ -35,6 +36,7 @@
       z-index:2;
     }
 
+    /* vertical toolbar (top-right, expanding down) */
     #ui{
       position:fixed;
       top:10px; right:10px;
@@ -55,13 +57,14 @@
       -webkit-backdrop-filter: blur(8px);
       user-select:none;
 
-      width: 128px;
+      width: 136px;                 /* just wide enough for layers dropdown */
       max-width: calc(100vw - 20px);
       box-sizing:border-box;
     }
 
     #ui.collapsed .advanced{ display:none !important; }
 
+    /* draggable handle: 6-dot grip + collapse button */
     #dragHandle{
       display:flex;
       align-items:center;
@@ -113,6 +116,8 @@
       cursor:pointer;
       white-space:nowrap;
       text-align:center;
+      width:100%;
+      box-sizing:border-box;
     }
     .tool.active{
       background:rgba(0,0,0,0.92);
@@ -164,6 +169,7 @@
     }
     .pill input{ margin:0; }
 
+    /* color dropdown */
     .color-select{
       position:relative;
       display:flex;
@@ -206,7 +212,7 @@
       display:none;
       z-index:9999;
       transform-origin: top right;
-      transform: translateX(-36px);
+      transform: translateX(-36px); /* let it expand a bit left of toolbar */
     }
     .palette.open{ display:block; }
     .palette-grid{
@@ -226,6 +232,7 @@
       outline-offset:1px;
     }
 
+    /* layers dropdown */
     .layers-select{
       position:relative;
       display:flex;
@@ -254,7 +261,7 @@
 
       min-width: 190px;
       transform-origin: top right;
-      transform: translateX(-50px);
+      transform: translateX(-60px); /* expand left */
     }
     .layers-menu.open{ display:block; }
     .layer-item{
@@ -296,6 +303,28 @@
     .layer-item.invisible .layer-name{ opacity:0.45; text-decoration: line-through; }
     .layer-item.invisible .vis-dot{ opacity:0.25; }
 
+    /* copy button with mini checkbox inside */
+    .copy-btn{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+    }
+    .copy-mini{
+      display:flex;
+      align-items:center;
+      gap:6px;
+      font-size:11px;
+      opacity:0.85;
+      cursor:pointer;
+      user-select:none;
+    }
+    .copy-mini input{
+      margin:0;
+      width:14px;
+      height:14px;
+    }
+
     /* tiny status line */
     #status{
       font-size:11px;
@@ -319,6 +348,7 @@
       <button id="collapseBtn" title="Collapse/expand">▸</button>
     </div>
 
+    <!-- In collapsed state, students still see these -->
     <button class="tool" id="toolPen">Pen</button>
     <button class="tool" id="toolEraser">Eraser</button>
 
@@ -341,6 +371,7 @@
       </div>
     </div>
 
+    <!-- Advanced controls (hidden when collapsed) -->
     <select class="advanced" id="bgMode" title="Background type">
       <option value="transparent" selected>Bg: transp.</option>
       <option value="dots">Bg: dots</option>
@@ -405,11 +436,13 @@
       <div class="layers-menu" id="layersMenu"></div>
     </div>
 
-    <button class="action advanced" id="copy" title="Copy to clipboard (PNG)">Copy</button>
-    <label class="pill advanced" title="Include background grid/dots in copied image">
-      <input id="copyBg" type="checkbox" />
-      Grid
-    </label>
+    <button class="action advanced copy-btn" id="copy" title="Copy PNG to clipboard">
+      <span>Copy</span>
+      <label class="copy-mini" title="Include grid/dots in copied image">
+        <input id="copyBg" type="checkbox" />
+        <span>grid</span>
+      </label>
+    </button>
 
     <div id="status" class="advanced"></div>
 
@@ -421,13 +454,26 @@
   <div id="canvas-outline"></div>
 
 <script>
+/* =========================
+   Whiteboard + Layers
+   ========================= */
+
 const GRID_STEP = 20;
-const LASER_RED = { r: 215, g: 38, b: 61 }; // #D7263D
+const LASER_RED = { r: 215, g: 38, b: 61 }; // clearer red (not pure #ff0000)
 
 const COLORS = [
-  "#111111","#D7263D","#009E73","#0072B2",
-  "#FFFFFF","#E69F00","#F0E442","#56B4E9",
-  "#CC79A7","#00BFC4","#D55E00","#8C564B"
+  "#111111", // black
+  "#D7263D", // strong red
+  "#009E73", // green
+  "#0072B2", // blue
+  "#FFFFFF", // white
+  "#E69F00", // orange
+  "#F0E442", // yellow
+  "#56B4E9", // light blue
+  "#CC79A7", // purple/pink
+  "#00BFC4", // cyan
+  "#D55E00", // vermillion
+  "#8C564B"  // brown
 ];
 
 const TOOL_DEFAULT_SNAP = {
@@ -453,16 +499,20 @@ let activeLayer = 0;
 
 let current = null;
 
+/* Soft clear: clears active layer but can be restored with Undo.
+   After CLEAR_UNDO_WINDOW further actions, the cleared snapshot is forgotten. */
 const CLEAR_UNDO_WINDOW = 12;
-let softClearStack = Array.from({length:LAYER_COUNT}, () => []);
+let softClearStack = Array.from({length:LAYER_COUNT}, () => []); // per-layer stack
 
+/* Laser pointer */
 let laserTrail = [];
 const LASER_FADE_MS = 450;
 
+/* Storage keys */
 const params = new URLSearchParams(location.search);
 const PAGE_ID = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
-const STORAGE_KEY = `p5_whiteboard_layers_v7::${location.origin}${location.pathname}::page=${PAGE_ID}`;
-const UI_POS_KEY = `p5_whiteboard_ui_pos_v7::${location.origin}${location.pathname}`;
+const STORAGE_KEY = `p5_whiteboard_layers_v8::${location.origin}${location.pathname}::page=${PAGE_ID}`;
+const UI_POS_KEY  = `p5_whiteboard_ui_pos_v8::${location.origin}${location.pathname}`;
 
 let saveTimer = null;
 function scheduleSave() {
@@ -472,6 +522,7 @@ function scheduleSave() {
 
 function alphaFromLevel(level){
   const l = Math.max(1, Math.min(10, level));
+  // 1 -> 255 (opaque), 10 -> ~25 (very transparent)
   return Math.round(255 - (l - 1) * (230 / 9));
 }
 
@@ -556,6 +607,7 @@ function initUI() {
   undoBtn = document.getElementById("undo");
   clearBtn = document.getElementById("clear");
 
+  // start collapsed (per your preference)
   setCollapsed(true);
 
   buildPalette();
@@ -573,6 +625,7 @@ function initUI() {
   toolEraserBtn.addEventListener("click", () => { shapeToolSel.selectedIndex = 0; setTool("eraser"); });
   toolLaserBtn.addEventListener("click", () => { shapeToolSel.selectedIndex = 0; setTool("laser"); });
 
+  // shape tool: input fires more consistently than change across embedded contexts
   shapeToolSel.addEventListener("input", () => setTool(shapeToolSel.value));
   shapeToolSel.addEventListener("change", () => setTool(shapeToolSel.value));
 
@@ -595,13 +648,19 @@ function initUI() {
 
   snapEl.addEventListener("change", () => { snapToGrid = snapEl.checked; scheduleSave(); });
 
+  copyBgEl.checked = copyIncludeBg;
   copyBgEl.addEventListener("change", () => { copyIncludeBg = copyBgEl.checked; scheduleSave(); });
+
+  // don't trigger Copy when tapping the mini checkbox
+  copyBgEl.addEventListener("pointerdown", (ev) => ev.stopPropagation());
+  copyBgEl.addEventListener("click", (ev) => ev.stopPropagation());
 
   copyBtn.addEventListener("click", () => copyToClipboard());
 
   undoBtn.addEventListener("click", () => undoActiveLayer());
   clearBtn.addEventListener("click", () => softClearActiveLayer());
 
+  // close popups when clicking elsewhere (capture helps inside iframes)
   document.addEventListener("pointerdown", (ev) => {
     const inColor = colorSelect.contains(ev.target);
     const inLayers = layersSelect.contains(ev.target);
@@ -719,7 +778,7 @@ function rebuildLayersMenu() {
       if (activeLayer !== i) {
         activeLayer = i;                 // first click: select only
       } else {
-        layers[i].visible = !layers[i].visible; // second click on same layer: toggle
+        layers[i].visible = !layers[i].visible; // second click on same layer: toggle visibility
       }
 
       updateLayersLabel();
@@ -807,6 +866,7 @@ function setTool(t) {
   snapToGrid = !!TOOL_DEFAULT_SNAP[tool];
   snapEl.checked = snapToGrid;
 
+  // eraser: default width 10; return to previous width when leaving
   if (tool === "eraser") {
     lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
     strokeWidth = 10;
@@ -862,7 +922,7 @@ function isPointerOverUI() {
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
-/* ---------- Input ---------- */
+/* ---------- Input (mouse + pen/touch) ---------- */
 function mousePressed() { if (isPointerOverUI()) return; startAction(mouseX, mouseY); }
 function mouseDragged() { if (!current) return; extendAction(mouseX, mouseY); }
 function mouseReleased() { finishAction(); }
@@ -898,6 +958,7 @@ function softClearActiveLayer() {
 function undoActiveLayer() {
   const L = layers[activeLayer];
 
+  // normal undo
   if (L.actions.length > 0) {
     L.actions.pop();
     rebuildLayerBuffer(activeLayer);
@@ -905,6 +966,7 @@ function undoActiveLayer() {
     return;
   }
 
+  // if empty, undo might restore last soft clear
   const stack = softClearStack[activeLayer];
   if (stack.length > 0) {
     const entry = stack.pop();
@@ -914,7 +976,7 @@ function undoActiveLayer() {
   }
 }
 
-/* ---------- Clipboard copy (Option B) ---------- */
+/* ---------- Clipboard copy (PNG) ---------- */
 async function copyToClipboard(){
   try{
     if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
@@ -922,31 +984,25 @@ async function copyToClipboard(){
       return;
     }
 
-    // render a composite image to an offscreen p5 graphics
+    // Compose on an offscreen graphics. IMPORTANT: opaque background for OneNote.
     const g = createGraphics(width, height);
     g.pixelDensity(1);
-    g.clear();
+    g.background(255); // OneNote: avoid transparent PNG -> black rectangle
 
-    // optional background overlay (grid/dots) — checkbox controls this
     const modeForCopy = copyIncludeBg ? bgMode : "transparent";
     drawBackgroundOverlay(g, modeForCopy);
 
-    // draw visible layers
     for (let i = 0; i < LAYER_COUNT; i++){
       if (!layers[i].visible) continue;
       g.image(layers[i].pg, 0, 0);
     }
 
-    // note: we do NOT include the live preview stroke or laser pointer in the copy
-
     const blob = await canvasToPngBlob(g.canvas);
     await navigator.clipboard.write([ new ClipboardItem({ "image/png": blob }) ]);
 
     setStatus("Copied. Paste into OneNote.");
-    // cleanup
     g.remove();
   } catch (e){
-    // common failures in iframes: NotAllowedError, SecurityError
     setStatus("Copy blocked (iframe). Use screenshot.");
   }
 }
@@ -1018,6 +1074,7 @@ function extendAction(x, y) {
       const a0 = pts[pts.length - 2];
       const b0 = pts[pts.length - 1];
 
+      // simple exponential smoothing toward new point
       const sm = current.style.smoothing || 1;
       const a = (sm <= 1) ? 1 : (2 / (sm + 1));
       const bx = a0.x + a * (b0.x - a0.x);
@@ -1044,6 +1101,7 @@ function finishAction() {
 
   const L = layers[current.layer];
 
+  // single point tap
   if (current.type === "path" && current.points.length === 1) {
     const p = current.points[0];
     L.pg.push();
@@ -1093,6 +1151,7 @@ function drawAction(a, target, isPreview) {
   target.push();
   beginInk(target, a.style);
 
+  // preview slightly more transparent so it doesn't look "final"
   if (isPreview && !a.style.eraser) {
     const col = color(a.style.color);
     col.setAlpha(Math.min(200, (a.style.alpha ?? 255)));
@@ -1135,6 +1194,7 @@ function drawAction(a, target, isPreview) {
   target.pop();
 }
 
+/* Line styles */
 function drawStyledLine(target, x1, y1, x2, y2, style) {
   const mode = style.lineStyle || "solid";
   if (mode === "solid") { target.line(x1, y1, x2, y2); return; }
@@ -1170,6 +1230,7 @@ function drawStyledLine(target, x1, y1, x2, y2, style) {
     return;
   }
 
+  // dash-dot
   while (t < len) {
     let a = t;
     let b = Math.min(len, t + dashLen);
@@ -1237,7 +1298,7 @@ function drawLaserTrail() {
 function saveToLocalStorage() {
   try {
     const payload = {
-      version: 7,
+      version: 8,
       page: PAGE_ID,
       bgMode,
       copyIncludeBg,
@@ -1249,7 +1310,7 @@ function saveToLocalStorage() {
       currentColor,
       activeLayer,
       layers: layers.map(L => ({ visible: L.visible, actions: L.actions }))
-      // softClearStack intentionally not persisted
+      // softClearStack intentionally not persisted (short-term)
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch (e) {}
@@ -1260,7 +1321,7 @@ function loadFromLocalStorage() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 7) return;
+    if (!data || data.version !== 8) return;
 
     if (typeof data.bgMode === "string") bgMode = data.bgMode;
     if (typeof data.copyIncludeBg === "boolean") copyIncludeBg = data.copyIncludeBg;
@@ -1281,6 +1342,7 @@ function loadFromLocalStorage() {
       }
     }
 
+    // apply to UI
     bgModeSel.value = bgMode;
     copyBgEl.checked = copyIncludeBg;
 
@@ -1308,7 +1370,7 @@ function windowResized() {
   }
 }
 
-/* Shortcuts */
+/* Shortcut */
 function keyPressed() {
   if (key === 'z' || key === 'Z') undoActiveLayer();
 }
