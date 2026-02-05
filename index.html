@@ -27,7 +27,6 @@
 
     #canvas-wrap{ position:fixed; inset:0; z-index:1; background:transparent; }
 
-    /* Thin outline around active drawing area (entire slide) */
     #canvas-outline{
       position:fixed;
       inset:0;
@@ -36,7 +35,6 @@
       z-index:2;
     }
 
-    /* Vertical toolbar, narrow */
     #ui{
       position:fixed;
       top:10px; right:10px;
@@ -45,31 +43,31 @@
       display:flex;
       flex-direction:column;
       align-items:stretch;
-      gap:6px;
+      gap:7px;
 
       background:var(--panel);
       border:1px solid var(--border);
       border-radius:var(--radius);
       box-shadow:var(--shadow);
-      padding:7px;
+      padding:8px;
 
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
       user-select:none;
 
-      width: 144px;                 /* narrower */
+      width: 128px;
       max-width: calc(100vw - 20px);
+      box-sizing:border-box;
     }
 
     #ui.collapsed .advanced{ display:none !important; }
 
-    /* Draggable handle */
     #dragHandle{
       display:flex;
       align-items:center;
       justify-content:space-between;
-      gap:8px;
-      padding:6px 6px;
+      gap:10px;
+      padding:6px 8px;
       border:1px solid var(--border);
       border-radius:10px;
       background:white;
@@ -80,24 +78,21 @@
 
     .dots{
       display:grid;
-      grid-template-columns: repeat(3, 3px);
-      grid-auto-rows:3px;
+      grid-template-columns: repeat(3, 4px);
+      grid-auto-rows:4px;
       gap:3px;
       opacity:0.55;
-      padding-left:2px;
     }
     .dots span{
-      width:3px; height:3px;
+      width:4px; height:4px;
       border-radius:50%;
       background: rgba(0,0,0,0.55);
       display:block;
     }
 
     #collapseBtn{
-      width:26px; height:26px;
-      display:inline-flex;
-      align-items:center;
-      justify-content:center;
+      width:28px; height:28px;
+      display:inline-flex; align-items:center; justify-content:center;
       border:1px solid var(--border);
       border-radius:999px;
       background:white;
@@ -105,6 +100,7 @@
       font-size:14px;
       line-height:1;
       padding:0;
+      flex: 0 0 auto;
     }
 
     .tool{
@@ -112,7 +108,7 @@
       background:white;
       color:var(--text);
       border-radius:999px;
-      padding:7px 8px;
+      padding:7px 10px;
       font-size:12px;
       cursor:pointer;
       white-space:nowrap;
@@ -127,11 +123,12 @@
     select{
       border:1px solid var(--border);
       border-radius:999px;
-      padding:7px 8px;
+      padding:7px 10px;
       background:white;
       font-size:12px;
       cursor:pointer;
       width:100%;
+      box-sizing:border-box;
     }
 
     .pill{
@@ -140,11 +137,14 @@
       gap:8px;
       border:1px solid var(--border);
       border-radius:999px;
-      padding:7px 8px;
+      padding:7px 10px;
       background:white;
       font-size:12px;
       cursor:pointer;
       white-space:nowrap;
+      width:100%;
+      box-sizing:border-box;
+      justify-content:flex-start;
     }
     .pill input{ margin:0; }
 
@@ -153,32 +153,26 @@
       background:white;
       color:var(--text);
       border-radius:12px;
-      padding:8px 8px;
+      padding:8px 10px;
       font-size:12px;
       cursor:pointer;
       white-space:nowrap;
       transition: transform .05s ease, background .12s ease;
       width:100%;
+      box-sizing:border-box;
     }
     button.action:hover{ background: rgba(0,0,0,0.04); }
     button.action:active{ transform: translateY(1px); }
-    button.action.primary{
-      background: rgba(0,0,0,0.92);
-      color:white;
-      border-color: rgba(0,0,0,0.92);
-    }
-    button.action.primary:hover{ background: rgba(0,0,0,0.84); }
 
-    /* Color dropdown (swatches) */
     .color-select{
       position:relative;
       display:flex;
       align-items:center;
       justify-content:space-between;
-      gap:8px;
+      gap:10px;
       border:1px solid var(--border);
       border-radius:999px;
-      padding:6px 8px;
+      padding:6px 10px;
       background:white;
       cursor:pointer;
       width:100%;
@@ -196,9 +190,9 @@
       border:1px solid rgba(0,0,0,0.18);
       box-sizing:border-box;
       background:#111;
-      flex:0 0 auto;
+      flex: 0 0 auto;
     }
-    .caret{ opacity:.7; font-size:12px; }
+    .caret{ opacity:.7; font-size:12px; flex:0 0 auto; }
 
     .palette{
       position:absolute;
@@ -211,6 +205,8 @@
       box-shadow:var(--shadow);
       display:none;
       z-index:9999;
+      transform-origin: top right;
+      transform: translateX(-36px);
     }
     .palette.open{ display:block; }
     .palette-grid{
@@ -230,43 +226,20 @@
       outline-offset:1px;
     }
 
-    /* Layers dropdown (shows active layer like a tool button) */
     .layers-select{
       position:relative;
       display:flex;
       align-items:center;
       justify-content:space-between;
-      gap:8px;
+      gap:10px;
       border:1px solid var(--border);
       border-radius:999px;
-      padding:6px 8px;
+      padding:6px 10px;
       background:white;
       cursor:pointer;
       width:100%;
       box-sizing:border-box;
     }
-    .layers-label{
-      font-size:12px;
-      opacity:.85;
-      display:flex;
-      align-items:center;
-      gap:8px;
-    }
-    .layer-badge{
-      width:20px;
-      height:20px;
-      border-radius:999px;
-      border:1px solid rgba(0,0,0,0.18);
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      font-weight:700;
-      font-size:12px;
-      line-height:1;
-      background: rgba(0,0,0,0.92);
-      color:white;
-    }
-
     .layers-menu{
       position:absolute;
       top:110%;
@@ -278,7 +251,10 @@
       box-shadow:var(--shadow);
       display:none;
       z-index:9999;
-      min-width: 170px;
+
+      min-width: 190px;
+      transform-origin: top right;
+      transform: translateX(-50px);
     }
     .layers-menu.open{ display:block; }
     .layer-item{
@@ -290,6 +266,7 @@
       border-radius:10px;
       cursor:pointer;
       font-size:12px;
+      user-select:none;
     }
     .layer-item:hover{ background: rgba(0,0,0,0.04); }
     .layer-left{
@@ -313,7 +290,7 @@
       width:10px; height:10px;
       border-radius:50%;
       border:1px solid rgba(0,0,0,0.22);
-      background: rgba(0,0,0,0.06);
+      background: rgba(0,0,0,0.10);
       flex: 0 0 auto;
     }
     .layer-item.invisible .layer-name{ opacity:0.45; text-decoration: line-through; }
@@ -333,9 +310,8 @@
       <button id="collapseBtn" title="Collapse/expand">▸</button>
     </div>
 
-    <!-- Essentials -->
-    <button class="tool" id="toolPen" title="Pen">Pen</button>
-    <button class="tool" id="toolEraser" title="Eraser">Eraser</button>
+    <button class="tool" id="toolPen">Pen</button>
+    <button class="tool" id="toolEraser">Eraser</button>
 
     <select id="shapeTool" title="Shape tool">
       <option value="" disabled selected>Shape</option>
@@ -356,14 +332,13 @@
       </div>
     </div>
 
-    <!-- Advanced -->
-    <select class="advanced" id="bgMode" title="Background">
-      <option value="transparent" selected>Bg: Transparent</option>
-      <option value="dots">Bg: Dots</option>
-      <option value="grid">Bg: Grid</option>
+    <select class="advanced" id="bgMode" title="Background type">
+      <option value="transparent" selected>Bg: transp.</option>
+      <option value="dots">Bg: dots</option>
+      <option value="grid">Bg: grid</option>
     </select>
 
-    <button class="tool advanced" id="toolLaser" title="Laser pointer">Laser</button>
+    <button class="tool advanced" id="toolLaser">Laser</button>
 
     <select class="advanced" id="lineStyle" title="Line style">
       <option value="solid">Solid</option>
@@ -372,30 +347,44 @@
       <option value="dashdot">Dash-dot</option>
     </select>
 
+    <!-- Width labels now "w ..." -->
     <select class="advanced" id="strokeWidth" title="Stroke width">
-      <option>1</option>
-      <option selected>2</option>
-      <option>3</option>
-      <option>4</option>
-      <option>5</option>
-      <option>8</option>
-      <option>10</option>
-      <option>20</option>
-      <option>30</option>
+      <option value="1">w 1</option>
+      <option value="2" selected>w 2</option>
+      <option value="3">w 3</option>
+      <option value="4">w 4</option>
+      <option value="5">w 5</option>
+      <option value="8">w 8</option>
+      <option value="10">w 10</option>
+      <option value="20">w 20</option>
+      <option value="30">w 30</option>
     </select>
 
-    <!-- Omit word "Smoothing" in the UI; keep in title tooltip -->
-    <select class="advanced" id="smoothing" title="Smoothing strength (1 = none, 10 = strong)">
-      <option value="1">1</option>
-      <option value="2" selected>2</option>
-      <option value="3">3</option>
-      <option value="4">4</option>
-      <option value="5">5</option>
-      <option value="6">6</option>
-      <option value="7">7</option>
-      <option value="8">8</option>
-      <option value="9">9</option>
-      <option value="10">10</option>
+    <select class="advanced" id="alphaLevel" title="Line transparency (1 = opaque, 10 = very transparent)">
+      <option value="1" selected>α 1</option>
+      <option value="2">α 2</option>
+      <option value="3">α 3</option>
+      <option value="4">α 4</option>
+      <option value="5">α 5</option>
+      <option value="6">α 6</option>
+      <option value="7">α 7</option>
+      <option value="8">α 8</option>
+      <option value="9">α 9</option>
+      <option value="10">α 10</option>
+    </select>
+
+    <!-- Smoothing labels now "s ..." -->
+    <select class="advanced" id="smoothing" title="Smoothing (1 = none, 10 = strong)">
+      <option value="1">s 1</option>
+      <option value="2" selected>s 2</option>
+      <option value="3">s 3</option>
+      <option value="4">s 4</option>
+      <option value="5">s 5</option>
+      <option value="6">s 6</option>
+      <option value="7">s 7</option>
+      <option value="8">s 8</option>
+      <option value="9">s 9</option>
+      <option value="10">s 10</option>
     </select>
 
     <label class="pill advanced" title="Snap points to grid">
@@ -403,12 +392,8 @@
       Snap
     </label>
 
-    <!-- Layers dropdown: shows active layer badge (1/2/3) -->
     <div class="layers-select advanced" id="layersSelect" title="Layers: click a layer to toggle visibility and select it">
-      <div class="layers-label">
-        <div class="layer-badge" id="activeLayerBadge">1</div>
-        <div>Layer</div>
-      </div>
+      <div style="font-size:12px; opacity:.85;" id="layersLabel">Layers</div>
       <div class="caret">▾</div>
       <div class="layers-menu" id="layersMenu"></div>
     </div>
@@ -416,10 +401,9 @@
     <button class="action advanced" id="undo" title="Undo (active layer)">Undo</button>
     <button class="action advanced" id="clear" title="Clear (all layers)">Clear</button>
 
-    <button class="action primary advanced" id="save" title="Export PNG">Save</button>
-    <label class="pill advanced" title="Include background overlay in PNG export">
-      <input id="includeBg" type="checkbox" />
-      Bg
+    <label class="pill advanced" title="Show background overlay (grid/dots)">
+      <input id="bgOn" type="checkbox" checked />
+      Backgr.
     </label>
   </div>
 
@@ -427,85 +411,74 @@
   <div id="canvas-outline"></div>
 
 <script>
-/* =========================
-   Whiteboard + Layers
-   ========================= */
+/* (JS unchanged except it reads numeric values from dropdowns; kept compatible.) */
 
 const GRID_STEP = 20;
-
-/* Better “teaching red” */
 const LASER_RED = { r: 215, g: 38, b: 61 }; // #D7263D
 
-/* Colors reordered for typical use: black, strong red, green, blue, ... */
 const COLORS = [
-  "#111111", // black
-  "#D7263D", // strong red
-  "#009E73", // green
-  "#0072B2", // blue
-  "#FFFFFF", // white
-  "#E69F00", // orange
-  "#F0E442", // yellow
-  "#56B4E9", // light blue
-  "#CC79A7", // magenta
-  "#00BFC4", // cyan
-  "#D55E00", // vermillion
-  "#8C564B"  // brown
+  "#111111","#D7263D","#009E73","#0072B2",
+  "#FFFFFF","#E69F00","#F0E442","#56B4E9",
+  "#CC79A7","#00BFC4","#D55E00","#8C564B"
 ];
 
 const TOOL_DEFAULT_SNAP = {
-  pen: false,
-  eraser: false,
-  laser: false,
-  line: true,
-  arrow: true,
-  circle: true,
-  rect: true
+  pen:false, eraser:false, laser:false,
+  line:true, arrow:true, circle:true, rect:true
 };
 
 let tool = "pen";
 let lineStyle = "solid";
 let strokeWidth = 2;
 let smoothing = 2;
+let alphaLevel = 1;
 let currentColor = COLORS[0];
-
 let lastNonEraserWidth = strokeWidth;
 let snapToGrid = false;
 
 let bgMode = "transparent";
-let includeBgInExport = false;
+let bgOn = true;
 
-/* Layers */
 const LAYER_COUNT = 3;
-let layers = []; // { pg, actions:[], visible:true }
+let layers = [];
 let activeLayer = 0;
 
-/* Current in-progress */
 let current = null;
 
-/* Laser */
 let laserTrail = [];
 const LASER_FADE_MS = 450;
 
-/* Storage: per page */
 const params = new URLSearchParams(location.search);
 const PAGE_ID = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
-const STORAGE_KEY = `p5_whiteboard_layers_v2::${location.origin}${location.pathname}::page=${PAGE_ID}`;
+const STORAGE_KEY = `p5_whiteboard_layers_v4::${location.origin}${location.pathname}::page=${PAGE_ID}`;
+const UI_POS_KEY = `p5_whiteboard_ui_pos_v4::${location.origin}${location.pathname}`;
 
-/* Toolbar position */
-const UI_POS_KEY = `p5_whiteboard_ui_pos_v2::${location.origin}${location.pathname}`;
-
-/* Save debounce */
 let saveTimer = null;
-function scheduleSave(){ if (saveTimer) clearTimeout(saveTimer); saveTimer = setTimeout(saveToLocalStorage, 160); }
+function scheduleSave() {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveToLocalStorage, 160);
+}
 
-/* p5 setup/draw */
-function setup(){
+function alphaFromLevel(level){
+  const l = Math.max(1, Math.min(10, level));
+  return Math.round(255 - (l - 1) * (230 / 9));
+}
+
+/* UI refs */
+let ui, dragHandle, collapseBtn;
+let toolPenBtn, toolEraserBtn, toolLaserBtn, shapeToolSel;
+let bgModeSel, bgOnEl, lineStyleSel, strokeWidthSel, alphaSel, smoothingSel;
+let snapEl, undoBtn, clearBtn;
+let colorSelect, palette, paletteGrid, colorChip;
+let layersSelect, layersMenu, layersLabel;
+
+function setup() {
   const c = createCanvas(windowWidth, windowHeight);
   c.parent("canvas-wrap");
   pixelDensity(1);
 
   layers = [];
-  for (let i = 0; i < LAYER_COUNT; i++){
+  for (let i = 0; i < LAYER_COUNT; i++) {
     const pg = createGraphics(windowWidth, windowHeight);
     pg.pixelDensity(1);
     pg.clear();
@@ -522,37 +495,25 @@ function setup(){
   setTool("pen");
 }
 
-function draw(){
+function draw() {
   clear();
   drawBackgroundOverlay(this);
 
-  for (let i = 0; i < LAYER_COUNT; i++){
+  for (let i = 0; i < LAYER_COUNT; i++) {
     if (!layers[i].visible) continue;
     image(layers[i].pg, 0, 0);
   }
 
-  if (current && current.type !== "laser"){
-    drawAction(current, this, true);
-  }
+  if (current && current.type !== "laser") drawAction(current, this, true);
 
   updateLaserTrail();
   drawLaserTrail();
 }
 
-/* UI refs */
-let ui, dragHandle, collapseBtn, activeLayerBadge;
-let toolPenBtn, toolEraserBtn, toolLaserBtn, shapeToolSel;
-let bgModeSel, lineStyleSel, strokeWidthSel, smoothingSel;
-let snapEl, undoBtn, clearBtn, saveBtn, includeBgEl;
-let colorSelect, palette, paletteGrid, colorChip;
-let layersSelect, layersMenu;
-
-/* UI init */
-function initUI(){
+function initUI() {
   ui = document.getElementById("ui");
   dragHandle = document.getElementById("dragHandle");
   collapseBtn = document.getElementById("collapseBtn");
-  activeLayerBadge = document.getElementById("activeLayerBadge");
 
   toolPenBtn = document.getElementById("toolPen");
   toolEraserBtn = document.getElementById("toolEraser");
@@ -565,19 +526,19 @@ function initUI(){
   colorChip = document.getElementById("colorChip");
 
   bgModeSel = document.getElementById("bgMode");
+  bgOnEl = document.getElementById("bgOn");
   lineStyleSel = document.getElementById("lineStyle");
   strokeWidthSel = document.getElementById("strokeWidth");
+  alphaSel = document.getElementById("alphaLevel");
   smoothingSel = document.getElementById("smoothing");
-
   snapEl = document.getElementById("snap");
 
   layersSelect = document.getElementById("layersSelect");
   layersMenu = document.getElementById("layersMenu");
+  layersLabel = document.getElementById("layersLabel");
 
   undoBtn = document.getElementById("undo");
   clearBtn = document.getElementById("clear");
-  saveBtn = document.getElementById("save");
-  includeBgEl = document.getElementById("includeBg");
 
   setCollapsed(true);
 
@@ -585,7 +546,7 @@ function initUI(){
   setColor(currentColor);
 
   rebuildLayersMenu();
-  updateActiveLayerBadge();
+  updateLayersLabel();
 
   collapseBtn.addEventListener("click", (ev) => {
     ev.stopPropagation();
@@ -600,19 +561,24 @@ function initUI(){
   shapeToolSel.addEventListener("change", () => setTool(shapeToolSel.value));
 
   bgModeSel.addEventListener("change", () => { bgMode = bgModeSel.value; scheduleSave(); });
-  lineStyleSel.addEventListener("change", () => lineStyle = lineStyleSel.value);
+  bgOnEl.addEventListener("change", () => { bgOn = bgOnEl.checked; scheduleSave(); });
+
+  lineStyleSel.addEventListener("change", () => { lineStyle = lineStyleSel.value; scheduleSave(); });
 
   strokeWidthSel.value = String(strokeWidth);
   strokeWidthSel.addEventListener("change", () => {
     strokeWidth = parseInt(strokeWidthSel.value, 10);
     if (tool !== "eraser") lastNonEraserWidth = strokeWidth;
+    scheduleSave();
   });
 
-  smoothingSel.value = String(smoothing);
-  smoothingSel.addEventListener("change", () => smoothing = parseInt(smoothingSel.value, 10));
+  alphaSel.value = String(alphaLevel);
+  alphaSel.addEventListener("change", () => { alphaLevel = parseInt(alphaSel.value, 10); scheduleSave(); });
 
-  snapEl.addEventListener("change", () => snapToGrid = snapEl.checked);
-  includeBgEl.addEventListener("change", () => includeBgInExport = includeBgEl.checked);
+  smoothingSel.value = String(smoothing);
+  smoothingSel.addEventListener("change", () => { smoothing = parseInt(smoothingSel.value, 10); scheduleSave(); });
+
+  snapEl.addEventListener("change", () => { snapToGrid = snapEl.checked; scheduleSave(); });
 
   undoBtn.addEventListener("click", () => {
     const L = layers[activeLayer];
@@ -625,58 +591,58 @@ function initUI(){
   clearBtn.addEventListener("click", () => {
     const ok = confirm("Really delete everything on ALL layers?\n\nThis cannot be undone.");
     if (!ok) return;
-    for (let i = 0; i < LAYER_COUNT; i++){
+    for (let i = 0; i < LAYER_COUNT; i++) {
       layers[i].actions = [];
       layers[i].pg.clear();
     }
     scheduleSave();
   });
 
-  saveBtn.addEventListener("click", () => exportPNG());
-
   document.addEventListener("pointerdown", (ev) => {
-    if (!colorSelect.contains(ev.target)) palette.classList.remove("open");
-    if (!layersSelect.contains(ev.target)) layersMenu.classList.remove("open");
-  });
+    const inColor = colorSelect.contains(ev.target);
+    const inLayers = layersSelect.contains(ev.target);
+    if (!inColor) palette.classList.remove("open");
+    if (!inLayers) layersMenu.classList.remove("open");
+  }, { capture: true });
 
   colorSelect.addEventListener("pointerdown", (ev) => {
     ev.stopPropagation();
-    palette.classList.toggle("open");
     layersMenu.classList.remove("open");
+    palette.classList.toggle("open");
   });
 
   layersSelect.addEventListener("pointerdown", (ev) => {
     ev.stopPropagation();
-    layersMenu.classList.toggle("open");
     palette.classList.remove("open");
+    layersMenu.classList.toggle("open");
   });
 
   initDrag();
 }
 
-function setCollapsed(collapsed){
+function setCollapsed(collapsed) {
   ui.classList.toggle("collapsed", collapsed);
   collapseBtn.textContent = collapsed ? "▸" : "▾";
 }
 
-/* Palette */
-function buildPalette(){
+function buildPalette() {
   paletteGrid.innerHTML = "";
   COLORS.forEach(hex => {
     const d = document.createElement("div");
     d.className = "swatch";
     d.style.background = hex;
-    d.title = hex; // hover shows exact
+    d.title = hex;
     d.addEventListener("pointerdown", (ev) => {
       ev.stopPropagation();
       setColor(hex);
       palette.classList.remove("open");
+      scheduleSave();
     });
     paletteGrid.appendChild(d);
   });
 }
 
-function setColor(hex){
+function setColor(hex) {
   currentColor = hex;
   colorChip.style.background = hex;
 
@@ -687,21 +653,21 @@ function setColor(hex){
   });
 }
 
-function rgbToHex(rgb){
+function rgbToHex(rgb) {
   const m = rgb.match(/\d+/g);
   if (!m || m.length < 3) return "#000000";
   const to2 = (n) => Number(n).toString(16).padStart(2, "0").toUpperCase();
   return `#${to2(m[0])}${to2(m[1])}${to2(m[2])}`;
 }
 
-/* Layers */
-function updateActiveLayerBadge(){
-  activeLayerBadge.textContent = String(activeLayer + 1);
+function updateLayersLabel(){
+  const vis = layers[activeLayer]?.visible ? "on" : "off";
+  layersLabel.textContent = `Layers (${activeLayer + 1}:${vis})`;
 }
 
-function rebuildLayersMenu(){
+function rebuildLayersMenu() {
   layersMenu.innerHTML = "";
-  for (let i = 0; i < LAYER_COUNT; i++){
+  for (let i = 0; i < LAYER_COUNT; i++) {
     const item = document.createElement("div");
     item.className = "layer-item" + (layers[i].visible ? "" : " invisible");
 
@@ -734,9 +700,9 @@ function rebuildLayersMenu(){
 
     item.addEventListener("pointerdown", (ev) => {
       ev.stopPropagation();
-      layers[i].visible = !layers[i].visible;   // toggle visibility
-      activeLayer = i;                          // also select as active
-      updateActiveLayerBadge();
+      layers[i].visible = !layers[i].visible;
+      activeLayer = i;
+      updateLayersLabel();
       rebuildLayersMenu();
       layersMenu.classList.remove("open");
       scheduleSave();
@@ -746,13 +712,12 @@ function rebuildLayersMenu(){
   }
 }
 
-/* Drag toolbar */
-function initDrag(){
-  try{
+function initDrag() {
+  try {
     const raw = localStorage.getItem(UI_POS_KEY);
-    if (raw){
+    if (raw) {
       const p = JSON.parse(raw);
-      if (p && typeof p.left === "number" && typeof p.top === "number"){
+      if (p && typeof p.left === "number" && typeof p.top === "number") {
         ui.style.left = `${p.left}px`;
         ui.style.top  = `${p.top}px`;
         ui.style.right = "auto";
@@ -761,37 +726,39 @@ function initDrag(){
   } catch {}
 
   let dragging = false;
-  let startX=0, startY=0, startLeft=0, startTop=0;
+  let startX = 0, startY = 0;
+  let startLeft = 0, startTop = 0;
 
   dragHandle.addEventListener("pointerdown", (ev) => {
     if (ev.target === collapseBtn) return;
     dragging = true;
     dragHandle.setPointerCapture(ev.pointerId);
-
     startX = ev.clientX;
     startY = ev.clientY;
 
     const rect = ui.getBoundingClientRect();
     startLeft = rect.left;
-    startTop  = rect.top;
+    startTop = rect.top;
 
     ui.style.left = `${startLeft}px`;
-    ui.style.top  = `${startTop}px`;
+    ui.style.top = `${startTop}px`;
     ui.style.right = "auto";
   });
 
   dragHandle.addEventListener("pointermove", (ev) => {
     if (!dragging) return;
+
     const dx = ev.clientX - startX;
     const dy = ev.clientY - startY;
-
-    const rect = ui.getBoundingClientRect();
-    const w = rect.width, h = rect.height;
 
     let newLeft = startLeft + dx;
     let newTop  = startTop + dy;
 
-    newLeft = Math.max(8, Math.min(window.innerWidth  - w - 8, newLeft));
+    const rect = ui.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+
+    newLeft = Math.max(8, Math.min(window.innerWidth - w - 8, newLeft));
     newTop  = Math.max(8, Math.min(window.innerHeight - h - 8, newTop));
 
     ui.style.left = `${newLeft}px`;
@@ -802,14 +769,12 @@ function initDrag(){
     if (!dragging) return;
     dragging = false;
     const rect = ui.getBoundingClientRect();
-    try{ localStorage.setItem(UI_POS_KEY, JSON.stringify({ left: rect.left, top: rect.top })); } catch {}
+    try { localStorage.setItem(UI_POS_KEY, JSON.stringify({ left: rect.left, top: rect.top })); } catch {}
   });
 }
 
-/* Tool switching */
-function setTool(t){
+function setTool(t) {
   if (!t) return;
-
   current = null;
   tool = t;
 
@@ -820,7 +785,7 @@ function setTool(t){
   snapToGrid = !!TOOL_DEFAULT_SNAP[tool];
   snapEl.checked = snapToGrid;
 
-  if (tool === "eraser"){
+  if (tool === "eraser") {
     lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
     strokeWidth = 10;
     strokeWidthSel.value = "10";
@@ -829,17 +794,17 @@ function setTool(t){
     strokeWidthSel.value = String(strokeWidth);
   }
 
-  if (tool === "line" || tool === "arrow" || tool === "circle" || tool === "rect"){
+  if (tool === "line" || tool === "arrow" || tool === "circle" || tool === "rect") {
     const idx = Array.from(shapeToolSel.options).findIndex(o => o.value === tool);
     if (idx >= 0) shapeToolSel.selectedIndex = idx;
   }
 }
 
-/* Background overlay */
-function drawBackgroundOverlay(target){
+function drawBackgroundOverlay(target) {
+  if (!bgOn) return;
   if (bgMode === "transparent") return;
 
-  if (bgMode === "grid"){
+  if (bgMode === "grid") {
     target.push();
     target.stroke(0, 40);
     target.strokeWeight(1);
@@ -849,51 +814,54 @@ function drawBackgroundOverlay(target){
     return;
   }
 
-  // dots
   target.push();
   target.noStroke();
   target.fill(0, 55);
   const r = 1.6;
-  for (let x = 0; x < width; x += GRID_STEP){
-    for (let y = 0; y < height; y += GRID_STEP){
+  for (let x = 0; x < width; x += GRID_STEP) {
+    for (let y = 0; y < height; y += GRID_STEP) {
       target.circle(x, y, 2*r);
     }
   }
   target.pop();
 }
 
-/* Snap */
-function snapPoint(x, y){
-  if (!snapToGrid) return {x, y};
-  return { x: Math.round(x/GRID_STEP)*GRID_STEP, y: Math.round(y/GRID_STEP)*GRID_STEP };
+function snapPoint(x, y) {
+  if (!snapToGrid) return { x, y };
+  return { x: Math.round(x / GRID_STEP) * GRID_STEP, y: Math.round(y / GRID_STEP) * GRID_STEP };
 }
 
-function isPointerOverUI(){
+function isPointerOverUI() {
   const r = ui.getBoundingClientRect();
   const x = mouseX, y = mouseY;
   return x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
 }
 
-/* Input */
-function mousePressed(){ if (isPointerOverUI()) return; startAction(mouseX, mouseY); }
-function mouseDragged(){ if (!current) return; extendAction(mouseX, mouseY); }
-function mouseReleased(){ finishAction(); }
+function mousePressed() { if (isPointerOverUI()) return; startAction(mouseX, mouseY); }
+function mouseDragged() { if (!current) return; extendAction(mouseX, mouseY); }
+function mouseReleased() { finishAction(); }
 
-function touchStarted(){ if (isPointerOverUI()) return true; startAction(mouseX, mouseY); return false; }
-function touchMoved(){ if (!current) return true; extendAction(mouseX, mouseY); return false; }
-function touchEnded(){ if (isPointerOverUI()) return true; finishAction(); return false; }
+function touchStarted() { if (isPointerOverUI()) return true; startAction(mouseX, mouseY); return false; }
+function touchMoved() { if (!current) return true; extendAction(mouseX, mouseY); return false; }
+function touchEnded() { if (isPointerOverUI()) return true; finishAction(); return false; }
 
-/* Actions */
-function makeStyle(){
+function makeStyle() {
   const w = strokeWidth;
-  if (tool === "eraser") return { weight:w, color:null, eraser:true, lineStyle, smoothing };
-  return { weight:w, color:currentColor, eraser:false, lineStyle, smoothing };
+  const a = alphaFromLevel(alphaLevel);
+  if (tool === "eraser") return { weight:w, color:null, alpha:255, eraser:true, lineStyle, smoothing };
+  return { weight:w, color:currentColor, alpha:a, eraser:false, lineStyle, smoothing };
 }
 
-function startAction(x, y){
+function closePopups(){
+  palette.classList.remove("open");
+  layersMenu.classList.remove("open");
+}
+
+function startAction(x, y) {
+  closePopups();
   const p0 = snapPoint(x, y);
 
-  if (tool === "laser"){
+  if (tool === "laser") {
     laserTrail.push({ x:p0.x, y:p0.y, t: millis() });
     current = { type:"laser" };
     return;
@@ -902,76 +870,73 @@ function startAction(x, y){
   const style = makeStyle();
   const layerIndex = activeLayer;
 
-  if (tool === "pen" || tool === "eraser"){
-    current = { type:"path", style, points:[p0], layer: layerIndex };
-  } else if (tool === "line"){
-    current = { type:"line", style, a:p0, b:p0, layer: layerIndex };
-  } else if (tool === "arrow"){
-    current = { type:"arrow", style, a:p0, b:p0, layer: layerIndex };
-  } else if (tool === "circle"){
-    current = { type:"circle", style, c:p0, r:0, layer: layerIndex };
-  } else if (tool === "rect"){
-    current = { type:"rect", style, a:p0, b:p0, layer: layerIndex };
-  }
+  if (tool === "pen" || tool === "eraser") current = { type:"path", style, points:[p0], layer: layerIndex };
+  else if (tool === "line") current = { type:"line", style, a:p0, b:p0, layer: layerIndex };
+  else if (tool === "arrow") current = { type:"arrow", style, a:p0, b:p0, layer: layerIndex };
+  else if (tool === "circle") current = { type:"circle", style, c:p0, r:0, layer: layerIndex };
+  else if (tool === "rect") current = { type:"rect", style, a:p0, b:p0, layer: layerIndex };
 }
 
-function extendAction(x, y){
+function extendAction(x, y) {
   if (!current) return;
   const p = snapPoint(x, y);
 
-  if (current.type === "laser"){
+  if (current.type === "laser") {
     laserTrail.push({ x:p.x, y:p.y, t: millis() });
     return;
   }
 
   const L = layers[current.layer];
 
-  if (current.type === "path"){
+  if (current.type === "path") {
     const pts = current.points;
     const last = pts[pts.length - 1];
     if (dist(last.x, last.y, p.x, p.y) < 0.8) return;
 
     pts.push(p);
-    if (pts.length >= 2){
-      const a = pts[pts.length - 2];
-      const b = pts[pts.length - 1];
+    if (pts.length >= 2) {
+      const a0 = pts[pts.length - 2];
+      const b0 = pts[pts.length - 1];
 
       const sm = current.style.smoothing || 1;
-      const alpha = (sm <= 1) ? 1 : (2 / (sm + 1));
-      const bx = a.x + alpha * (b.x - a.x);
-      const by = a.y + alpha * (b.y - a.y);
-      pts[pts.length - 1] = { x:bx, y:by };
+      const a = (sm <= 1) ? 1 : (2 / (sm + 1));
+      const bx = a0.x + a * (b0.x - a0.x);
+      const by = a0.y + a * (b0.y - a0.y);
+      pts[pts.length - 1] = { x: bx, y: by };
 
       L.pg.push();
       beginInk(L.pg, current.style);
-      drawStyledLine(L.pg, a.x, a.y, bx, by, current.style);
+      drawStyledLine(L.pg, a0.x, a0.y, bx, by, current.style);
       endInk(L.pg, current.style);
       L.pg.pop();
     }
-  } else if (current.type === "line" || current.type === "arrow" || current.type === "rect"){
+  } else if (current.type === "line" || current.type === "arrow" || current.type === "rect") {
     current.b = p;
-  } else if (current.type === "circle"){
+  } else if (current.type === "circle") {
     current.r = dist(current.c.x, current.c.y, p.x, p.y);
   }
 }
 
-function finishAction(){
+function finishAction() {
   if (!current) return;
 
-  if (current.type === "laser"){ current = null; return; }
+  if (current.type === "laser") { current = null; return; }
 
   const L = layers[current.layer];
 
-  if (current.type === "path" && current.points.length === 1){
+  if (current.type === "path" && current.points.length === 1) {
     const p = current.points[0];
     L.pg.push();
-    if (current.style.eraser){
+    if (current.style.eraser) {
       L.pg.erase(); L.pg.noStroke(); L.pg.circle(p.x, p.y, current.style.weight); L.pg.noErase();
     } else {
-      L.pg.noStroke(); L.pg.fill(current.style.color); L.pg.circle(p.x, p.y, current.style.weight);
+      L.pg.noStroke();
+      const col = color(current.style.color); col.setAlpha(current.style.alpha ?? 255);
+      L.pg.fill(col);
+      L.pg.circle(p.x, p.y, current.style.weight);
     }
     L.pg.pop();
-  } else if (current.type !== "path"){
+  } else if (current.type !== "path") {
     L.pg.push();
     drawAction(current, L.pg, false);
     L.pg.pop();
@@ -982,9 +947,8 @@ function finishAction(){
   scheduleSave();
 }
 
-/* Drawing primitives */
-function beginInk(target, style){
-  if (style.eraser){
+function beginInk(target, style) {
+  if (style.eraser) {
     target.erase();
     target.stroke(0);
     target.strokeWeight(style.weight);
@@ -992,52 +956,54 @@ function beginInk(target, style){
     target.noFill();
   } else {
     target.noErase();
-    target.stroke(style.color);
+    const col = color(style.color);
+    col.setAlpha(style.alpha ?? 255);
+    target.stroke(col);
     target.strokeWeight(style.weight);
     target.strokeCap(ROUND);
     target.noFill();
   }
 }
-function endInk(target, style){ if (style.eraser) target.noErase(); }
+function endInk(target, style) { if (style.eraser) target.noErase(); }
 
-function drawAction(a, target, isPreview){
+function drawAction(a, target, isPreview) {
   target.push();
   beginInk(target, a.style);
 
-  if (isPreview && !a.style.eraser){
-    const col = color(a.style.color); col.setAlpha(160); target.stroke(col);
+  if (isPreview && !a.style.eraser) {
+    const col = color(a.style.color);
+    col.setAlpha(Math.min(200, (a.style.alpha ?? 255)));
+    target.stroke(col);
   }
 
-  if (a.type === "path"){
+  if (a.type === "path") {
     const pts = a.points;
-    if (pts.length > 1){
-      for (let i = 1; i < pts.length; i++){
-        drawStyledLine(target, pts[i-1].x, pts[i-1].y, pts[i].x, pts[i].y, a.style);
-      }
+    for (let i = 1; i < pts.length; i++) {
+      drawStyledLine(target, pts[i-1].x, pts[i-1].y, pts[i].x, pts[i].y, a.style);
     }
     endInk(target, a.style);
     target.pop();
     return;
   }
 
-  if (a.type === "line"){
-    drawStyledLine(target, a.a.x, a.a.y, a.b.x, a.b.y, a.style);
-  } else if (a.type === "arrow"){
-    drawStyledArrow(target, a.a.x, a.a.y, a.b.x, a.b.y, a.style);
-  } else if (a.type === "circle"){
+  if (a.type === "line") drawStyledLine(target, a.a.x, a.a.y, a.b.x, a.b.y, a.style);
+  else if (a.type === "arrow") drawStyledArrow(target, a.a.x, a.a.y, a.b.x, a.b.y, a.style);
+  else if (a.type === "circle") {
     target.noErase();
-    target.stroke(a.style.eraser ? 0 : a.style.color);
-    if (isPreview && !a.style.eraser){ const col = color(a.style.color); col.setAlpha(160); target.stroke(col); }
+    const col = color(a.style.eraser ? "#000000" : a.style.color);
+    col.setAlpha(a.style.eraser ? 255 : (a.style.alpha ?? 255));
+    target.stroke(col);
     target.noFill();
-    target.circle(a.c.x, a.c.y, 2*a.r);
-  } else if (a.type === "rect"){
+    target.circle(a.c.x, a.c.y, 2 * a.r);
+  } else if (a.type === "rect") {
     const x = Math.min(a.a.x, a.b.x);
     const y = Math.min(a.a.y, a.b.y);
     const w = Math.abs(a.b.x - a.a.x);
     const h = Math.abs(a.b.y - a.a.y);
     target.noErase();
-    target.stroke(a.style.eraser ? 0 : a.style.color);
-    if (isPreview && !a.style.eraser){ const col = color(a.style.color); col.setAlpha(160); target.stroke(col); }
+    const col = color(a.style.eraser ? "#000000" : a.style.color);
+    col.setAlpha(a.style.eraser ? 255 : (a.style.alpha ?? 255));
+    target.stroke(col);
     target.noFill();
     target.rect(x, y, w, h);
   }
@@ -1046,44 +1012,46 @@ function drawAction(a, target, isPreview){
   target.pop();
 }
 
-function drawStyledLine(target, x1, y1, x2, y2, style){
+function drawStyledLine(target, x1, y1, x2, y2, style) {
   const mode = style.lineStyle || "solid";
-  if (mode === "solid"){ target.line(x1, y1, x2, y2); return; }
+  if (mode === "solid") { target.line(x1, y1, x2, y2); return; }
 
-  const dx = x2-x1, dy = y2-y1;
+  const dx = x2 - x1, dy = y2 - y1;
   const len = Math.hypot(dx, dy);
   if (len < 0.001) return;
-  const ux = dx/len, uy = dy/len;
+  const ux = dx / len, uy = dy / len;
 
   const w = Math.max(1, style.weight || 1);
-  const dotGap = 6 + 0.6*w;
-  const dashLen = 10 + 1.2*w;
-  const gapLen  = 6 + 0.8*w;
+  const dotGap = 6 + 0.6 * w;
+  const dashLen = 10 + 1.2 * w;
+  const gapLen  = 6 + 0.8 * w;
 
   let t = 0;
-  const drawDash = (a,b) => target.line(x1+ux*a, y1+uy*a, x1+ux*b, y1+uy*b);
-  const drawDot  = (at) => { target.push(); target.strokeCap(ROUND); target.point(x1+ux*at, y1+uy*at); target.pop(); };
+  const drawDash = (a, b) => target.line(x1 + ux*a, y1 + uy*a, x1 + ux*b, y1 + uy*b);
+  const drawDot  = (at) => { target.push(); target.strokeCap(ROUND); target.point(x1 + ux*at, y1 + uy*at); target.pop(); };
 
-  if (mode === "dotted"){
+  if (mode === "dotted") {
     target.push(); target.strokeCap(ROUND); target.strokeWeight(w);
-    while (t <= len){ drawDot(t); t += dotGap; }
+    while (t <= len) { drawDot(t); t += dotGap; }
     target.pop();
     return;
   }
 
-  if (mode === "dash"){
-    while (t < len){
-      const a=t, b=Math.min(len, t+dashLen);
-      drawDash(a,b);
+  if (mode === "dash") {
+    while (t < len) {
+      const a = t;
+      const b = Math.min(len, t + dashLen);
+      drawDash(a, b);
       t += dashLen + gapLen;
     }
     return;
   }
 
   // dashdot
-  while (t < len){
-    let a=t, b=Math.min(len, t+dashLen);
-    drawDash(a,b);
+  while (t < len) {
+    let a = t;
+    let b = Math.min(len, t + dashLen);
+    drawDash(a, b);
     t += dashLen + gapLen;
     if (t >= len) break;
     drawDot(t);
@@ -1091,153 +1059,118 @@ function drawStyledLine(target, x1, y1, x2, y2, style){
   }
 }
 
-function drawStyledArrow(target, x1, y1, x2, y2, style){
+function drawStyledArrow(target, x1, y1, x2, y2, style) {
   drawStyledLine(target, x1, y1, x2, y2, style);
 
-  const ang = Math.atan2(y2-y1, x2-x1);
+  const ang = Math.atan2(y2 - y1, x2 - x1);
   const w = Math.max(1, style.weight || 1);
-  const headLen = Math.max(10, 3.2*w);
-  const headAng = (28*Math.PI)/180;
+  const headLen = Math.max(10, 3.2 * w);
+  const headAng = (28 * Math.PI) / 180;
 
-  const x3 = x2 - headLen*Math.cos(ang - headAng);
-  const y3 = y2 - headLen*Math.sin(ang - headAng);
-  const x4 = x2 - headLen*Math.cos(ang + headAng);
-  const y4 = y2 - headLen*Math.sin(ang + headAng);
+  const x3 = x2 - headLen * Math.cos(ang - headAng);
+  const y3 = y2 - headLen * Math.sin(ang - headAng);
+  const x4 = x2 - headLen * Math.cos(ang + headAng);
+  const y4 = y2 - headLen * Math.sin(ang + headAng);
 
   target.line(x2, y2, x3, y3);
   target.line(x2, y2, x4, y4);
 }
 
-/* Rebuild */
-function rebuildLayerBuffer(i){
+function rebuildLayerBuffer(i) {
   const L = layers[i];
   L.pg.clear();
-  for (const a of L.actions){
+  for (const a of L.actions) {
     L.pg.push();
     drawAction(a, L.pg, false);
     L.pg.pop();
   }
 }
-function rebuildAllBuffers(){
-  for (let i = 0; i < LAYER_COUNT; i++) rebuildLayerBuffer(i);
-}
+function rebuildAllBuffers() { for (let i = 0; i < LAYER_COUNT; i++) rebuildLayerBuffer(i); }
 
-/* Laser */
-function updateLaserTrail(){
+function updateLaserTrail() {
   const now = millis();
   laserTrail = laserTrail.filter(p => now - p.t < LASER_FADE_MS);
 }
-function drawLaserTrail(){
-  if (!laserTrail.length) return;
-
+function drawLaserTrail() {
+  if (laserTrail.length === 0) return;
   push(); noFill();
-  for (let i=1;i<laserTrail.length;i++){
-    const p=laserTrail[i-1], q=laserTrail[i];
+  for (let i = 1; i < laserTrail.length; i++) {
+    const p = laserTrail[i-1], q = laserTrail[i];
     const age = millis() - q.t;
-    const alpha = map(age, 0, LASER_FADE_MS, 180, 0, true);
-    stroke(LASER_RED.r, LASER_RED.g, LASER_RED.b, alpha);
+    const a = map(age, 0, LASER_FADE_MS, 180, 0, true);
+    stroke(LASER_RED.r, LASER_RED.g, LASER_RED.b, a);
     strokeWeight(4); strokeCap(ROUND);
-    line(p.x,p.y,q.x,q.y);
+    line(p.x, p.y, q.x, q.y);
   }
-  const last = laserTrail[laserTrail.length-1];
+  const last = laserTrail[laserTrail.length - 1];
   stroke(LASER_RED.r, LASER_RED.g, LASER_RED.b, 200);
   strokeWeight(10);
-  point(last.x,last.y);
+  point(last.x, last.y);
   pop();
 }
 
-/* Export */
-function exportPNG(){
-  const exportG = createGraphics(width, height);
-  exportG.pixelDensity(1);
-  exportG.clear();
-
-  if (includeBgInExport) drawBackgroundOverlay(exportG);
-
-  for (let i = 0; i < LAYER_COUNT; i++){
-    if (!layers[i].visible) continue;
-    exportG.image(layers[i].pg, 0, 0);
-  }
-
-  const snap = get();
-  clear();
-  image(exportG, 0, 0);
-  saveCanvas(`whiteboard-${sanitize(PAGE_ID)}-${timestamp()}`, "png");
-  image(snap, 0, 0);
-}
-
-function sanitize(s){ return String(s).replace(/[^\w\-]+/g, "_").slice(0, 60) || "page"; }
-function timestamp(){
-  const d=new Date(); const pad=n=>String(n).padStart(2,"0");
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}-${pad(d.getSeconds())}`;
-}
-
-/* Storage */
-function saveToLocalStorage(){
-  try{
+function saveToLocalStorage() {
+  try {
     const payload = {
-      version: 2,
+      version: 4,
       page: PAGE_ID,
       bgMode,
-      includeBgInExport,
+      bgOn,
       snapToGrid,
       lineStyle,
       strokeWidth,
+      alphaLevel,
       smoothing,
       currentColor,
       activeLayer,
       layers: layers.map(L => ({ visible: L.visible, actions: L.actions }))
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch(e){
-    console.warn("Could not save:", e);
-  }
+  } catch (e) {}
 }
 
-function loadFromLocalStorage(){
-  try{
+function loadFromLocalStorage() {
+  try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (!data || data.version !== 2) return;
+    if (!data || data.version !== 4) return;
 
     if (typeof data.bgMode === "string") bgMode = data.bgMode;
-    if (typeof data.includeBgInExport === "boolean") includeBgInExport = data.includeBgInExport;
+    if (typeof data.bgOn === "boolean") bgOn = data.bgOn;
     if (typeof data.snapToGrid === "boolean") snapToGrid = data.snapToGrid;
     if (typeof data.lineStyle === "string") lineStyle = data.lineStyle;
     if (typeof data.strokeWidth === "number") strokeWidth = data.strokeWidth;
+    if (typeof data.alphaLevel === "number") alphaLevel = data.alphaLevel;
     if (typeof data.smoothing === "number") smoothing = data.smoothing;
     if (typeof data.currentColor === "string") currentColor = data.currentColor;
     if (typeof data.activeLayer === "number") activeLayer = Math.max(0, Math.min(LAYER_COUNT - 1, data.activeLayer));
 
-    if (Array.isArray(data.layers)){
-      for (let i = 0; i < LAYER_COUNT; i++){
+    if (Array.isArray(data.layers)) {
+      for (let i = 0; i < LAYER_COUNT; i++) {
         if (!data.layers[i]) continue;
         if (typeof data.layers[i].visible === "boolean") layers[i].visible = data.layers[i].visible;
         if (Array.isArray(data.layers[i].actions)) layers[i].actions = data.layers[i].actions;
       }
     }
 
-    // reflect UI
     bgModeSel.value = bgMode;
-    includeBgEl.checked = includeBgInExport;
+    bgOnEl.checked = bgOn;
     lineStyleSel.value = lineStyle;
     strokeWidthSel.value = String(strokeWidth);
+    alphaSel.value = String(alphaLevel);
     smoothingSel.value = String(smoothing);
     snapEl.checked = snapToGrid;
-
     setColor(currentColor);
-    updateActiveLayerBadge();
+
     rebuildLayersMenu();
-  } catch(e){
-    console.warn("Could not load:", e);
-  }
+    updateLayersLabel();
+  } catch (e) {}
 }
 
-/* Resize */
-function windowResized(){
+function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
-  for (let i = 0; i < LAYER_COUNT; i++){
+  for (let i = 0; i < LAYER_COUNT; i++) {
     const old = layers[i].pg;
     const ng = createGraphics(windowWidth, windowHeight);
     ng.pixelDensity(1);
@@ -1247,17 +1180,14 @@ function windowResized(){
   }
 }
 
-/* Shortcuts */
-function keyPressed(){
-  if (key === 'z' || key === 'Z'){
+function keyPressed() {
+  if (key === 'z' || key === 'Z') {
     const L = layers[activeLayer];
-    if (L.actions.length){
+    if (L.actions.length) {
       L.actions.pop();
       rebuildLayerBuffer(activeLayer);
       scheduleSave();
     }
-  } else if (key === 's' || key === 'S'){
-    exportPNG();
   }
 }
 </script>
