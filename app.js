@@ -159,6 +159,22 @@
     }, true); // capture phase is crucial inside iframes
   };
 
+  // ✅ Ensure we save even when Slides destroys the iframe quickly
+  function installExitSaves(){
+    if (WB._exitSavesInstalled) return;
+    WB._exitSavesInstalled = true;
+
+    window.addEventListener("pagehide", () => {
+      try { WB.storage.saveNow?.(); } catch(_) {}
+    }, { capture:true });
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden"){
+        try { WB.storage.saveNow?.(); } catch(_) {}
+      }
+    }, { capture:true });
+  }
+
   // ---- p5 entry points ----
   window.setup = function setup(){
     // ✅ Ensure state is safe BEFORE anything else touches it
@@ -169,10 +185,14 @@
     WB.text.hookEditorEvents();
     WB.drawing.setupP5();
 
-    // Load persisted state (may overwrite parts) => re-ensure containers afterwards
+    // ✅ Load persisted data AFTER p5 is ready, then apply layers onto new graphics
     WB.storage.loadNow();
     WB.ensureStateDefaults();
 
+    // ✅ CRITICAL: re-apply loaded actions/visibility onto the newly created layers
+    try { WB.storage.applyLoadedLayersIfAny?.(); } catch(e){ console.warn(e); }
+
+    // Now rebuild the pixel buffers from actions
     WB.drawing.rebuildAllBuffers();
     WB.text.rebuildTextOverlay();
 
@@ -185,6 +205,9 @@
 
     // ✅ install keyboard handling AFTER canvas exists
     WB.installKeyboard();
+
+    // ✅ install pagehide/visibilitychange forced saves
+    installExitSaves();
 
     canvasEl.addEventListener("pointerdown", (ev) => {
       ev.preventDefault();

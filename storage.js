@@ -33,66 +33,68 @@ WB.storage = {
   },
 
   _timer: null,
-  _loadedSnapshot: null,
 
   scheduleSave(){
     if (WB.storage._timer) clearTimeout(WB.storage._timer);
     WB.storage._timer = setTimeout(() => WB.storage.saveNow(), 180);
   },
 
-  // ---- serialize only JSON-safe snapshot ----
-  _makeSnapshot(){
+  // ✅ Extract ONLY serializable parts (never store pg/ui/etc.)
+  _buildSerializablePayload(){
     const S = WB.state;
 
-    const safeLayers = (S.layers || []).map(L => ({
-      visible: !!L.visible,
+    const safeState = {
+      // drawing/tool prefs
+      tool: S.tool,
+      strokeWidth: S.strokeWidth,
+      smoothing: S.smoothing,
+      transp: S.transp,
+      currentColor: S.currentColor,
+
+      snapToGrid: S.snapToGrid,
+      bgMode: S.bgMode,
+
+      collapseState: S.collapseState,
+      darkMode: S.darkMode,
+
+      activeLayer: S.activeLayer,
+
+      // laser + memories
+      laserInitialized: S.laserInitialized,
+      penState: S.penState,
+      highlighterInitialized: S.highlighterInitialized,
+      highlighterWidth: S.highlighterWidth,
+      highlighterTransp: S.highlighterTransp,
+
+      // text defaults
+      defaultTextSize: S.defaultTextSize
+    };
+
+    // Layers: store only actions + visibility
+    const layersData = (S.layers || []).map(L => ({
+      visible: (typeof L.visible === "boolean") ? L.visible : true,
       actions: Array.isArray(L.actions) ? L.actions : []
     }));
 
     return {
       version: "split_v1",
       page: WB.storage.pageId(),
-      t: Date.now(),
-
-      // UI/interaction-independent settings (keep minimal & JSON-safe)
-      settings: {
-        tool: S.tool || "pointer",
-        strokeWidth: S.strokeWidth ?? 2,
-        smoothing: S.smoothing ?? 2,
-        transp: S.transp ?? 1,
-        currentColor: S.currentColor || (WB.CONFIG?.COLORS?.[0] || "#000000"),
-
-        snapToGrid: !!S.snapToGrid,
-        bgMode: S.bgMode || "transparent",
-
-        collapseState: S.collapseState || "partial",
-        darkMode: !!S.darkMode,
-
-        activeLayer: S.activeLayer ?? 0,
-
-        // memory features
-        penState: S.penState || null,
-        highlighterInitialized: !!S.highlighterInitialized,
-        highlighterWidth: S.highlighterWidth ?? 20,
-        highlighterTransp: S.highlighterTransp ?? 7,
-        laserInitialized: !!S.laserInitialized
-      },
-
-      layers: safeLayers
+      ts: Date.now(),
+      state: safeState,
+      layers: layersData
     };
   },
 
   saveNow(){
     try{
-      const snap = WB.storage._makeSnapshot();
-      localStorage.setItem(WB.storage.key(), JSON.stringify(snap));
+      const payload = WB.storage._buildSerializablePayload();
+      localStorage.setItem(WB.storage.key(), JSON.stringify(payload));
     } catch(e){
-      // If this happens, you WANT to see it during dev:
+      // keep silent, but at least log in dev
       console.warn("[storage] saveNow failed:", e);
     }
   },
 
-  // load JSON-safe snapshot into memory; applying to p5 layers happens after setupP5()
   loadNow(){
     try{
       const raw = localStorage.getItem(WB.storage.key());
@@ -101,54 +103,34 @@ WB.storage = {
       const data = JSON.parse(raw);
       if (!data || data.version !== "split_v1") return;
 
-      WB.storage._loadedSnapshot = data;
+      // ✅ Merge safe state fields onto existing defaults
+      if (data.state && typeof data.state === "object"){
+        Object.assign(WB.state, data.state);
+      }
 
-      // Apply settings immediately (these are JSON-safe)
-      const S = WB.state;
-      const st = data.settings || {};
-
-      S.tool = st.tool ?? S.tool;
-
-      S.strokeWidth = st.strokeWidth ?? S.strokeWidth;
-      S.smoothing   = st.smoothing   ?? S.smoothing;
-      S.transp      = st.transp      ?? S.transp;
-      S.currentColor = st.currentColor ?? S.currentColor;
-
-      S.snapToGrid = !!st.snapToGrid;
-      S.bgMode     = st.bgMode ?? S.bgMode;
-
-      S.collapseState = st.collapseState ?? S.collapseState;
-      S.darkMode      = !!st.darkMode;
-
-      S.activeLayer = st.activeLayer ?? S.activeLayer;
-
-      S.penState = st.penState ?? S.penState;
-      S.highlighterInitialized = !!st.highlighterInitialized;
-      S.highlighterWidth  = st.highlighterWidth ?? S.highlighterWidth;
-      S.highlighterTransp = st.highlighterTransp ?? S.highlighterTransp;
-      S.laserInitialized  = !!st.laserInitialized;
+      // ✅ Do NOT overwrite runtime layers/pg; just stash layer data for later apply
+      if (Array.isArray(data.layers)){
+        WB.state._loadedLayersData = data.layers;
+      }
     } catch(e){
       console.warn("[storage] loadNow failed:", e);
     }
   },
 
-  // Call this AFTER WB.drawing.setupP5() created fresh p5.Graphics layers
-  applyLoadedToRuntime(){
-    const snap = WB.storage._loadedSnapshot;
-    if (!snap || !snap.layers) return;
-
+  // ✅ Call AFTER setupP5() created the p5.Graphics layers
+  applyLoadedLayersIfAny(){
     const S = WB.state;
-    for (let i = 0; i < 3; i++){
-      const L = S.layers[i];
-      const src = snap.layers[i];
-      if (!L || !src) continue;
+    const data = S._loadedLayersData;
+    if (!Array.isArray(data) || !Array.isArray(S.layers) || !S.layers.length) return;
 
-      L.visible = !!src.visible;
-      L.actions = Array.isArray(src.actions) ? src.actions : [];
+    for (let i=0; i<Math.min(S.layers.length, data.length); i++){
+      const L = S.layers[i];
+      const d = data[i] || {};
+      L.visible = (typeof d.visible === "boolean") ? d.visible : true;
+      L.actions = Array.isArray(d.actions) ? d.actions : [];
     }
 
-    // Now rebuild buffers based on restored actions
-    try { WB.drawing.rebuildAllBuffers(); } catch(_) {}
-    try { WB.text.rebuildTextOverlay(); } catch(_) {}
+    // cleanup
+    delete S._loadedLayersData;
   }
 };
