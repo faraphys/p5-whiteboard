@@ -264,7 +264,7 @@
 </head>
 
 <body>
-  <!-- CHANGED: start fully collapsed -->
+  <!-- start fully collapsed -->
   <div id="ui" class="full">
     <div id="dragHandle" title="Drag toolbar">
       <div class="dots" aria-hidden="true">
@@ -273,6 +273,9 @@
       </div>
 
       <div class="handleBtns">
+        <!-- NEW: pointer button for tablets -->
+        <button id="btnPointer" class="miniBtn" title="Pointer (Esc)">🖱️</button>
+
         <div class="shortcutWrap">
           <button id="btnShortcuts" class="miniBtn" title="Shortcuts">⌨</button>
           <div id="shortcutCard">
@@ -290,6 +293,7 @@
             <div class="row"><span><code>R</code></span><span>Laser</span></div>
             <div class="row"><span><code>Shift</code></span><span>Align line/arrow</span></div>
             <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
+            <div class="row"><span><code>Ctrl+D</code></span><span>Clear layer</span></div>
             <div class="row"><span><code>Del</code></span><span>Delete selection</span></div>
             <div class="row"><span><code>1..9</code></span><span>Width</span></div>
           </div>
@@ -305,8 +309,14 @@
       <button class="tool" id="toolEraser" title="Eraser (E)"><span class="ico">🧽</span><span>Eraser</span></button>
       <button class="tool" id="toolHighlighter" title="Highlighter (H)"><span class="ico">🖍️</span><span>Highlighter</span></button>
 
-      <!-- Shapes: preselect Arrow (no "Shapes" dropdown) -->
-      <button class="tool" id="toolArrow" title="Arrow (S cycles shapes)"><span class="ico">→</span><span>Arrow</span></button>
+      <!-- Shapes dropdown is back (default: Arrow); S still cycles -->
+      <select id="shapeSel" title="Shapes (S cycles)">
+        <option value="line">— Line</option>
+        <option value="arrow" selected>→ Arrow</option>
+        <option value="circle">◯ Circle</option>
+        <option value="rect">▭ Rectangle</option>
+        <option value="ellipse">⬭ Ellipse</option>
+      </select>
 
       <div class="color-select" id="colorSelect" title="Color">
         <div class="color-left">
@@ -350,7 +360,7 @@
       </div>
 
       <button class="action" id="undo" title="Undo (Ctrl+Z)"><span class="ico">↶</span><span>Undo</span></button>
-      <button class="action" id="clear" title="Clear"><span class="ico">🗑</span><span>Clear</span></button>
+      <button class="action" id="clear" title="Clear (Ctrl+D)"><span class="ico">🗑</span><span>Clear</span></button>
     </div>
   </div>
 
@@ -425,7 +435,6 @@ function safeParseJSON(s, fallback){
   try{ return JSON.parse(s); } catch(e){ return fallback; }
 }
 function getDeckKey(){
-  // try to be stable across Slides.com embeds
   const u = new URL(window.location.href);
   const deck = u.searchParams.get("deck") || u.searchParams.get("deckId") || u.searchParams.get("id");
   const p = (u.pathname || "").replace(/\/+$/,"");
@@ -433,7 +442,6 @@ function getDeckKey(){
 }
 function getSlideKeyFromURL(){
   const u = new URL(window.location.href);
-  // common indices/ids in query
   const sp = u.searchParams;
   const cand =
     sp.get("slide") || sp.get("s") ||
@@ -441,11 +449,9 @@ function getSlideKeyFromURL(){
     sp.get("index") || sp.get("page") || sp.get("p");
   if (cand) return String(cand);
 
-  // hash often changes on slide navigation
   const h = (u.hash || "").replace(/^#/,"").trim();
   if (h) return h;
 
-  // last resort: full href (but keep short-ish)
   return (u.pathname + u.search + u.hash).slice(0,240) || "slide";
 }
 function storageKeyFor(slKey){
@@ -492,9 +498,7 @@ function saveToStorage(forKey){
   try{
     const k = storageKeyFor(forKey || slideKey);
     localStorage.setItem(k, JSON.stringify(exportState()));
-  } catch(e){
-    // ignore quota/blocked storage
-  }
+  } catch(e){}
 }
 
 function loadFromStorage(forKey){
@@ -505,12 +509,10 @@ function loadFromStorage(forKey){
   return importState(state);
 }
 
-// Optional: accept slide id via postMessage (if you wire it up from Slides/reveal)
 window.addEventListener("message", (ev)=>{
   const d = ev.data;
   if (!d || typeof d !== "object") return;
 
-  // expected: {type:"whiteboard:setSlide", key:"h2-v0"} OR {type:"whiteboard:setSlide", h:2, v:0}
   if (d.type === "whiteboard:setSlide"){
     let k = d.key;
     if (!k && (d.h!=null || d.v!=null)) k = `h${d.h ?? 0}-v${d.v ?? 0}`;
@@ -518,11 +520,9 @@ window.addEventListener("message", (ev)=>{
 
     k = String(k);
     if (k !== slideKey){
-      // switch slide
       saveToStorage(slideKey);
       slideKey = k;
       lastSlideKey = k;
-      // reset to empty before load (so stale drawings don't flash)
       for (let i=0;i<3;i++){ layers[i].actions=[]; layers[i].visible=true; layers[i].pg.clear(); }
       loadFromStorage(slideKey);
       rebuildAllBuffers();
@@ -530,7 +530,6 @@ window.addEventListener("message", (ev)=>{
     }
   }
 
-  // expected: {type:"whiteboard:save"} or {type:"whiteboard:clear"}
   if (d.type === "whiteboard:save") saveToStorage(slideKey);
   if (d.type === "whiteboard:clear"){
     for (let i=0;i<3;i++){ layers[i].actions=[]; layers[i].visible=true; layers[i].pg.clear(); }
@@ -543,7 +542,7 @@ window.addEventListener("message", (ev)=>{
 let tool = "pointer";
 let strokeWidth = 2;
 let smoothing = 2;
-let transp = 1; // 1..10
+let transp = 1;
 let currentColor = COLORS[0];
 let snapToGrid = false;
 let bgMode = "transparent";
@@ -559,12 +558,11 @@ const textOverlay = document.getElementById("text-overlay");
 const cursorHint = document.getElementById("cursorHint");
 let lastPointerClient = {x: 0, y: 0};
 
-// memory to restore user pen/shapes values after highlighter/laser
 let penState = { color: currentColor, width: strokeWidth, transp, smoothing };
 
 // text tool
 let defaultTextSize = 20;
-let defaultTextStyle = "regular"; // regular|bold|italic
+let defaultTextStyle = "regular";
 const textEditor = document.getElementById("textEditor");
 const textInput  = document.getElementById("textInput");
 const textSizeEditor = document.getElementById("textSizeEditor");
@@ -578,7 +576,7 @@ let lastMovePos = {x:0,y:0};
 
 // Shapes cycling (S)
 const SHAPES = ["line","arrow","circle","rect","ellipse"];
-let shapeIndex = 1; // default to arrow
+let shapeIndex = 1; // default Arrow
 
 // Layers (3)
 let layers = [];
@@ -587,14 +585,14 @@ let undoStack = Array.from({length:3}, () => []);
 const UNDO_LIMIT = 40;
 
 /* =====================
-   Lasso (move + delete only)
+   Lasso
    ===================== */
 let lasso = {
   points: [],
   selecting: false,
   selectedIdx: [],
   bbox: null,
-  mode: "idle",       // idle | move
+  mode: "idle",
   moveStart: null
 };
 
@@ -793,19 +791,16 @@ function setup(){
     layers.push({ pg, actions: [], visible: true });
   }
 
-  // init persistence key
   slideKey = getSlideKeyFromURL();
   lastSlideKey = slideKey;
 
   initUI();
 
-  // load saved drawing for this slide (if any)
   loadFromStorage(slideKey);
 
   rebuildAllBuffers();
   rebuildTextOverlay();
 
-  // poll for slide changes (hash/query often changes in Slides/reveal embeds)
   setInterval(()=>{
     const k = getSlideKeyFromURL();
     if (k && k !== lastSlideKey){
@@ -813,7 +808,6 @@ function setup(){
       lastSlideKey = k;
       slideKey = k;
 
-      // reset quickly to avoid showing previous slide
       for (let i=0;i<3;i++){ layers[i].actions=[]; layers[i].visible=true; layers[i].pg.clear(); }
 
       loadFromStorage(slideKey);
@@ -822,7 +816,6 @@ function setup(){
     }
   }, 350);
 
-  // save on background/unload
   document.addEventListener("visibilitychange", ()=>{
     if (document.hidden) saveToStorage(slideKey);
   });
@@ -1113,7 +1106,7 @@ function rebuildAllBuffers(){ for (let i=0;i<3;i++) rebuildLayerBuffer(i); }
    ===================== */
 function updateLaserTrail(){
   const now=millis();
-  laserTrail = laserTrail.filter(p=> now-p.t < LASER_FADE_MS);
+  laserTrail = laserTrail.filter(p=> now-p.t < 2000);
 }
 function drawLaserTrail(){
   if(!laserTrail.length) return;
@@ -1125,7 +1118,7 @@ function drawLaserTrail(){
   for(let i=1;i<laserTrail.length;i++){
     const p=laserTrail[i-1], q=laserTrail[i];
     const age=millis()-q.t;
-    const a=map(age,0,LASER_FADE_MS,200,0,true);
+    const a=map(age,0,2000,200,0,true);
     stroke(red(c),green(c),blue(c),a);
     strokeWeight(w); strokeCap(ROUND);
     line(p.x,p.y,q.x,q.y);
@@ -1160,82 +1153,6 @@ function drawLassoOverlay(){
     drawingContext.setLineDash([]);
     pop();
   }
-}
-
-/* =====================
-   Line/arrow alignment
-   ===================== */
-function maybeAlignLineLike(a){
-  if (!a || !(a.type==="line" || a.type==="arrow")) return;
-  const dx = a.b.x - a.a.x;
-  const dy = a.b.y - a.a.y;
-  if (Math.abs(dx) >= Math.abs(dy)) a.b.y = a.a.y;
-  else a.b.x = a.a.x;
-}
-function clearHoldAlignTimer(){
-  if (holdAlignTimer){ clearTimeout(holdAlignTimer); holdAlignTimer=null; }
-}
-function armHoldAlignTimer(){
-  clearHoldAlignTimer();
-  holdAlignTimer = setTimeout(()=>{
-    if (!current) return;
-
-    if (current.type==="line" || current.type==="arrow"){
-      maybeAlignLineLike(current);
-      return;
-    }
-
-    if (current.type==="path" && tool==="pen"){
-      const lineObj = maybeConvertPathToAxisLine(current);
-      if (lineObj){
-        current = lineObj;
-        maybeAlignLineLike(current);
-      }
-    }
-  }, HOLD_ALIGN_MS);
-}
-function isStill(now, x, y){
-  const moved = dist2(x,y,lastMovePos.x,lastMovePos.y) > STILL_EPS_PX*STILL_EPS_PX;
-  if (moved){
-    lastMovePos = {x,y};
-    lastSignificantMoveAt = now;
-    clearHoldAlignTimer();
-    return false;
-  }
-  return (now - lastSignificantMoveAt) > STILL_TIME_MS;
-}
-function pointLineDist(px,py, ax,ay, bx,by){
-  const vx=bx-ax, vy=by-ay;
-  const wx=px-ax, wy=py-ay;
-  const c1 = vx*wx + vy*wy;
-  const c2 = vx*vx + vy*vy || 1e-9;
-  const t = c1 / c2;
-  const projx = ax + t*vx;
-  const projy = ay + t*vy;
-  return Math.hypot(px-projx, py-projy);
-}
-function maybeConvertPathToAxisLine(pathAction){
-  const pts = pathAction.points || [];
-  if (pts.length < 3) return null;
-  const a0 = pts[0];
-  const a1 = pts[pts.length-1];
-  const len = Math.hypot(a1.x-a0.x, a1.y-a0.y);
-  if (len < FREE_LINE_MIN_LENGTH) return null;
-
-  let maxD = 0;
-  for (const p of pts){
-    maxD = Math.max(maxD, pointLineDist(p.x,p.y,a0.x,a0.y,a1.x,a1.y));
-    if (maxD > FREE_LINE_MAX_DEVIATION) return null;
-  }
-
-  const st = {
-    eraser:false,
-    weight: pathAction.style.baseWeight || strokeWidth,
-    color: pathAction.style.color || currentColor,
-    alpha: pathAction.style.alpha ?? alphaFromTransp(transp)
-  };
-
-  return { type:"line", style: st, a:{x:a0.x,y:a0.y}, b:{x:a1.x,y:a1.y}, layer: pathAction.layer };
 }
 
 /* =====================
@@ -1392,9 +1309,6 @@ function pointerToCanvasXY(ev){
    ===================== */
 function startAction(x,y,pressure,pointerType){
   closePopups();
-  clearHoldAlignTimer();
-  lastSignificantMoveAt = performance.now();
-  lastMovePos = {x,y};
 
   if (tool==="pointer") return;
 
@@ -1504,16 +1418,8 @@ function extendAction(x,y,pressure,pointerType){
     return;
   }
 
-  const now = performance.now();
-  const still = isStill(now, p.x, p.y);
-  if (still && !holdAlignTimer) armHoldAlignTimer();
-
   if (current.type==="line" || current.type==="arrow"){
     current.b = p;
-    if (isShiftDown){
-      maybeAlignLineLike(current);
-      clearHoldAlignTimer();
-    }
     return;
   }
 
@@ -1535,8 +1441,6 @@ function extendAction(x,y,pressure,pointerType){
 }
 
 function finishAction(){
-  clearHoldAlignTimer();
-
   if (tool==="lasso"){
     if (lasso.mode==="move"){
       lasso.mode="idle";
@@ -1636,6 +1540,15 @@ function onPointerUp(ev){
 /* =====================
    Keyboard shortcuts
    ===================== */
+function doClearActiveLayer(){
+  clearSelection();
+  pushUndo(activeLayer);
+  layers[activeLayer].actions = [];
+  rebuildLayerBuffer(activeLayer);
+  rebuildTextOverlay();
+  saveToStorage(slideKey);
+}
+
 function onKeyDown(ev){
   if (ev.key === "Shift") isShiftDown = true;
 
@@ -1649,15 +1562,16 @@ function onKeyDown(ev){
 
   const k = ev.key.toLowerCase();
 
-  if (/^[1-9]$/.test(k)){
-    const idx = parseInt(k,10) - 1;
-    const vals=[1,2,3,4,5,8,10,20,30];
-    const v = vals[idx] ?? vals[vals.length-1];
-    strokeWidth = v;
-    lastNonEraserWidth = v;
-    strokeWidthSel.value = String(v);
-    updateStrokeSelectLabel();
-    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+  // Ctrl+D = Clear (active layer)
+  if ((ev.ctrlKey||ev.metaKey) && k==="d"){
+    ev.preventDefault();
+    doClearActiveLayer();
+    return;
+  }
+
+  if ((ev.ctrlKey||ev.metaKey) && k==="z"){
+    ev.preventDefault();
+    undoActiveLayer();
     return;
   }
 
@@ -1672,24 +1586,9 @@ function onKeyDown(ev){
   if (k==="s"){
     shapeIndex = (shapeIndex + 1) % SHAPES.length;
     const sh = SHAPES[shapeIndex];
+    if (shapeSel) shapeSel.value = sh;
     setTool(sh);
     showCursorHint(`Shapes: ${sh}`);
-  }
-
-  if (k==="g"){
-    bgMode = (bgMode==="transparent") ? "dots" : (bgMode==="dots") ? "grid" : "transparent";
-    bgModeSel.value = bgMode;
-    saveToStorage(slideKey);
-  }
-
-  if (k==="n"){
-    snapToGrid = !snapToGrid;
-    snapEl.checked = snapToGrid;
-  }
-
-  if ((ev.ctrlKey||ev.metaKey) && k==="z"){
-    ev.preventDefault();
-    undoActiveLayer();
   }
 
   if (lasso.selectedIdx.length && (ev.key==="Delete" || ev.key==="Backspace")){
@@ -1702,16 +1601,17 @@ function onKeyDown(ev){
    UI
    ===================== */
 let ui, dragHandle;
-let btnCycle, glyphCycle;
+let btnCycle, glyphCycle, btnPointer;
 
-let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn, toolArrowBtn;
+let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn;
 let bgModeSel, strokeWidthSel, smoothingSel, transpSel;
 let snapEl, undoBtn, clearBtn;
 
+let shapeSel;
 let colorSelect, palette, paletteGrid, colorChip;
 let layersSelect, layersMenu, layersLabel;
 
-let collapseState = "full"; // CHANGED: default state is fully collapsed
+let collapseState = "full";
 
 function initUI(){
   ui=document.getElementById("ui");
@@ -1719,15 +1619,17 @@ function initUI(){
 
   btnCycle=document.getElementById("btnCycle");
   glyphCycle=document.getElementById("glyphCycle");
+  btnPointer=document.getElementById("btnPointer");
 
   toolPenBtn=document.getElementById("toolPen");
   toolEraserBtn=document.getElementById("toolEraser");
   toolHighlighterBtn=document.getElementById("toolHighlighter");
-  toolArrowBtn=document.getElementById("toolArrow");
   toolFillBtn=document.getElementById("toolFill");
   toolTextBtn=document.getElementById("toolText");
   toolLaserBtn=document.getElementById("toolLaser");
   toolLassoBtn=document.getElementById("toolLasso");
+
+  shapeSel=document.getElementById("shapeSel");
 
   bgModeSel=document.getElementById("bgMode");
   strokeWidthSel=document.getElementById("strokeWidth");
@@ -1746,6 +1648,15 @@ function initUI(){
 
   undoBtn=document.getElementById("undo");
   clearBtn=document.getElementById("clear");
+
+  // NEW pointer button
+  btnPointer.addEventListener("click",(ev)=>{
+    ev.preventDefault();
+    ev.stopPropagation();
+    clearSelection();
+    setTool("pointer");
+    showCursorHint("Pointer");
+  });
 
   // palette
   paletteGrid.innerHTML="";
@@ -1803,11 +1714,20 @@ function initUI(){
   toolPenBtn.addEventListener("click",()=> setTool("pen"));
   toolEraserBtn.addEventListener("click",()=> setTool("eraser"));
   toolHighlighterBtn.addEventListener("click",()=> setTool("highlighter"));
-  toolArrowBtn.addEventListener("click",()=>{ shapeIndex = 1; setTool("arrow"); });
   toolFillBtn.addEventListener("click",()=> setTool("fill"));
   toolTextBtn.addEventListener("click",()=> setTool("text"));
   toolLaserBtn.addEventListener("click",()=> setTool("laser"));
   toolLassoBtn.addEventListener("click",()=> setTool("lasso"));
+
+  // shapes dropdown
+  if (shapeSel){
+    shapeSel.value = SHAPES[shapeIndex] || "arrow";
+    shapeSel.addEventListener("change", ()=>{
+      const v = shapeSel.value;
+      shapeIndex = Math.max(0, SHAPES.indexOf(v));
+      setTool(v);
+    });
+  }
 
   bgModeSel.addEventListener("change",()=>{ bgMode=bgModeSel.value; saveToStorage(slideKey); });
 
@@ -1819,24 +1739,16 @@ function initUI(){
   snapEl.addEventListener("change",()=>{ snapToGrid=snapEl.checked; });
 
   undoBtn.addEventListener("click",()=>{ clearSelection(); undoActiveLayer(); });
-  clearBtn.addEventListener("click",()=>{
-    clearSelection();
-    pushUndo(activeLayer);
-    layers[activeLayer].actions = [];
-    rebuildLayerBuffer(activeLayer);
-    rebuildTextOverlay();
-    saveToStorage(slideKey);
-  });
+  clearBtn.addEventListener("click",()=>{ doClearActiveLayer(); });
 
   rebuildLayersMenu();
   updateLayersLabel();
 
-  applyCollapseState(); // will now apply "full" initially
+  applyCollapseState();
   initDrag();
 
   document.getElementById("btnShortcuts").addEventListener("click",(e)=>e.preventDefault());
 
-  // “shapes” defaults to arrow button (no dropdown)
   setTool("arrow");
 }
 
@@ -1915,29 +1827,6 @@ function updateTranspSelectLabel(){
 function setTool(t){
   if(!t) t="pointer";
   if (textEditor.style.display!=="none") commitTextEdit();
-  clearHoldAlignTimer();
-
-  const isGoingToSpecial = (t==="highlighter" || t==="laser");
-  if (isGoingToSpecial){
-    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
-  }
-
-  const isPenOrShape = (t==="pen" || ["line","arrow","circle","rect","ellipse"].includes(t));
-  const fromSpecial = (tool==="highlighter" || tool==="laser");
-  if (isPenOrShape && fromSpecial){
-    currentColor = penState.color;
-    strokeWidth  = penState.width;
-    transp       = penState.transp;
-    smoothing    = penState.smoothing;
-
-    colorChip.style.background = currentColor;
-    strokeWidthSel.value = String(strokeWidth);
-    smoothingSel.value = String(smoothing);
-    transpSel.value = String(transp);
-    updateStrokeSelectLabel();
-    updateSmoothingSelectLabel();
-    updateTranspSelectLabel();
-  }
 
   tool=t;
   current=null;
@@ -1945,47 +1834,15 @@ function setTool(t){
   toolPenBtn.classList.toggle("active", tool==="pen");
   toolEraserBtn.classList.toggle("active", tool==="eraser");
   toolHighlighterBtn.classList.toggle("active", tool==="highlighter");
-  toolArrowBtn.classList.toggle("active", tool==="arrow");
   toolFillBtn.classList.toggle("active", tool==="fill");
   toolTextBtn.classList.toggle("active", tool==="text");
   toolLaserBtn.classList.toggle("active", tool==="laser");
   toolLassoBtn.classList.toggle("active", tool==="lasso");
 
-  if (tool==="laser"){
-    currentColor = "#D7263D";
-    transp = 1;
-    strokeWidth = 2;
-
-    colorChip.style.background = currentColor;
-    transpSel.value = String(transp);
-    strokeWidthSel.value = String(strokeWidth);
-
-    updateTranspSelectLabel();
-    updateStrokeSelectLabel();
+  if (shapeSel && ["line","arrow","circle","rect","ellipse"].includes(tool)){
+    shapeSel.value = tool;
+    shapeIndex = Math.max(0, SHAPES.indexOf(tool));
   }
-
-  if (tool==="highlighter"){
-    strokeWidth = 20;
-    transp = 7;
-    strokeWidthSel.value = String(strokeWidth);
-    transpSel.value = String(transp);
-    updateStrokeSelectLabel();
-    updateTranspSelectLabel();
-  }
-
-  if (tool==="eraser"){
-    lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
-    strokeWidth=10;
-  } else if (tool!=="highlighter" && tool!=="laser") {
-    strokeWidth=lastNonEraserWidth ?? strokeWidth ?? 2;
-  }
-
-  strokeWidthSel.value = String(strokeWidth);
-  smoothingSel.value = String(smoothing);
-  transpSel.value = String(transp);
-  updateStrokeSelectLabel();
-  updateSmoothingSelectLabel();
-  updateTranspSelectLabel();
 
   const boxes = textOverlay.querySelectorAll(".text-box");
   boxes.forEach(b=> b.style.pointerEvents = (tool==="text") ? "auto" : "none");
