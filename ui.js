@@ -41,11 +41,6 @@ WB.ui = {
     U.undo = document.getElementById("undo");
     U.clear = document.getElementById("clear");
 
-    // NEW: Save/Open JSON
-    U.saveBtn = document.getElementById("btnSaveJson");
-    U.openBtn = document.getElementById("btnOpenJson");
-    U.openFile = document.getElementById("fileOpenJson");
-
     U.textEditor = document.getElementById("textEditor");
     U.textEditorTitle = document.getElementById("textEditorTitle");
     U.textSizeEditor = document.getElementById("textSizeEditor");
@@ -54,7 +49,7 @@ WB.ui = {
     U.cursorHint = document.getElementById("cursorHint");
     U.toast = document.getElementById("toast");
 
-    // Shortcuts card content (export shortcuts removed; add save/open)
+    // Shortcuts card content (NO save/open/export)
     U.shortcutCard.innerHTML = `
       <div class="title">Shortcuts</div>
       <div class="row"><span><code>Esc</code></span><span>Pointer</span></div>
@@ -72,8 +67,6 @@ WB.ui = {
       <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
       <div class="row"><span><code>Del</code></span><span>Delete selection</span></div>
       <div class="row"><span><code>1..9</code></span><span>Width</span></div>
-      <div class="row"><span><code>Ctrl+S</code></span><span>Save JSON</span></div>
-      <div class="row"><span><code>Ctrl+O</code></span><span>Open JSON</span></div>
     `;
 
     // palette + selects
@@ -115,7 +108,7 @@ WB.ui = {
       WB.storage.scheduleSave();
     });
 
-    // shortcuts popover (if you had a click/hover elsewhere, keep it; otherwise leave as-is)
+    // shortcuts popover
     if (U.btnShortcuts && U.shortcutCard){
       U.btnShortcuts.addEventListener("pointerdown",(ev)=>{
         ev.stopPropagation();
@@ -151,50 +144,6 @@ WB.ui = {
 
     U.undo.addEventListener("click",()=>{ WB.lasso.clearSelection(); WB.drawing.undoActiveLayer(); });
     U.clear.addEventListener("click",()=> WB.drawing.clearActiveLayerUndoable());
-
-    // NEW: Save/Open JSON buttons
-    if (U.saveBtn){
-      U.saveBtn.addEventListener("click", async ()=>{
-        try{
-          if (!WB.io || !WB.io.saveAsJson) throw new Error("WB.io.saveAsJson missing (include io.js)");
-          await WB.io.saveAsJson();
-          WB.ui.toast("Saved .wb.json");
-        }catch(e){
-          console.error(e);
-          alert("Save failed (maybe blocked when embedded).");
-        }
-      });
-    }
-
-    if (U.openBtn && U.openFile){
-      U.openBtn.addEventListener("click",()=> U.openFile.click());
-      U.openFile.addEventListener("change", async ()=>{
-        const file = U.openFile.files && U.openFile.files[0];
-        U.openFile.value = "";
-        if(!file) return;
-        try{
-          if (!WB.io || !WB.io.openJsonFromFile) throw new Error("WB.io.openJsonFromFile missing (include io.js)");
-          await WB.io.openJsonFromFile(file);
-          WB.ui.toast("Loaded .wb.json");
-        }catch(e){
-          console.error(e);
-          alert("Open failed.");
-        }
-      });
-    }
-
-    // Keyboard shortcuts: Ctrl+S / Ctrl+O
-    document.addEventListener("keydown",(ev)=>{
-      const key = (ev.key || "").toLowerCase();
-      if ((ev.ctrlKey || ev.metaKey) && key==="s"){
-        ev.preventDefault();
-        U.saveBtn?.click();
-      }
-      if ((ev.ctrlKey || ev.metaKey) && key==="o"){
-        ev.preventDefault();
-        U.openBtn?.click();
-      }
-    });
 
     WB.ui.initDrag();
     WB.ui.applyCollapse();
