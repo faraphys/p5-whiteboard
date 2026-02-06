@@ -5,30 +5,54 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>p5 Whiteboard</title>
 
+  <!-- p5 -->
   <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-  <!-- MathJax v3 -->
-  <script>
-    window.MathJax = {
-      tex: {
-        packages: { '[+]': ['ams'] },
-        inlineMath: [['$', '$'], ['\\(', '\\)']],
+  <!-- MathJax v2 (SVG output) with Gyre-Termes ("mathjax-termes" style) -->
+  <script type="text/x-mathjax-config">
+    MathJax.Hub.Config({
+      showProcessingMessages: false,
+      messageStyle: "none",
+      tex2jax: {
+        inlineMath: [['$','$'], ['\\(','\\)']],
         displayMath: [['$$','$$'], ['\\[','\\]']]
       },
-      svg: { fontCache: 'global' }
-    };
+      TeX: {
+        extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js"]
+      },
+      SVG: {
+        font: "Gyre-Termes",
+        linebreaks: { automatic: true }
+      }
+    });
   </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@2/MathJax.js?config=TeX-AMS_SVG"></script>
 
   <style>
+    /* Libertinus Sans from your repo (woff2 in root) */
+    @font-face{
+      font-family:"Libertinus Sans";
+      src:url("https://cdn.jsdelivr.net/gh/faraphys/fonts@main/LibertinusSans-Regular.woff2") format("woff2");
+      font-style:normal; font-weight:400; font-display:swap;
+    }
+    @font-face{
+      font-family:"Libertinus Sans";
+      src:url("https://cdn.jsdelivr.net/gh/faraphys/fonts@main/LibertinusSans-Bold.woff2") format("woff2");
+      font-style:normal; font-weight:700; font-display:swap;
+    }
+    @font-face{
+      font-family:"Libertinus Sans";
+      src:url("https://cdn.jsdelivr.net/gh/faraphys/fonts@main/LibertinusSans-Italic.woff2") format("woff2");
+      font-style:italic; font-weight:400; font-display:swap;
+    }
+
     :root{
       --panel: rgba(255,255,255,0.92);
       --border: rgba(0,0,0,0.12);
       --text: rgba(0,0,0,0.86);
       --shadow: 0 6px 18px rgba(0,0,0,0.10);
       --radius: 12px;
-      --font: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+      --font: "Libertinus Sans", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       --outline: rgba(140,140,140,0.22);
 
       --grid-a: 9;
@@ -36,26 +60,19 @@
       --dots-r: 2.4;
     }
 
-    body.dark{
-      --panel: rgba(20,20,20,0.90);
-      --border: rgba(255,255,255,0.14);
-      --text: rgba(255,255,255,0.90);
-      --shadow: 0 10px 26px rgba(0,0,0,0.50);
-      --outline: rgba(220,220,220,0.20);
-
-      --grid-a: 18;
-      --dots-a: 60;
-      --dots-r: 2.6;
-    }
-
     html, body{ margin:0; height:100%; background:transparent; font-family:var(--font); color:var(--text); overflow:hidden; }
-    body.dark{ background:#000; }
-
     #canvas-wrap{ position:fixed; inset:0; z-index:1; background:transparent; }
     #canvas-outline{ position:fixed; inset:0; border:1px solid var(--outline); pointer-events:none; z-index:2; }
 
     #text-overlay{ position:fixed; inset:0; z-index:5; pointer-events:none; }
-    .text-box{ position:absolute; transform-origin: top left; pointer-events:none; white-space: pre-wrap; color:var(--text); }
+    .text-box{
+      position:absolute;
+      transform-origin: top left;
+      pointer-events:none;
+      white-space: pre-wrap;
+      color:var(--text);
+      font-family: var(--font);
+    }
 
     #cursorHint{
       position:fixed; z-index:999999;
@@ -70,8 +87,8 @@
       white-space:nowrap;
     }
     #cursorHint.show{ opacity:1; transform: translateY(0); }
-    body.dark #cursorHint{ background:rgba(255,255,255,0.90); color:#111; }
 
+    /* toolbar */
     #ui{
       position:fixed; top:10px; right:10px; z-index:10;
       display:flex; flex-direction:column; align-items:stretch;
@@ -80,7 +97,8 @@
       box-shadow:var(--shadow); padding:8px;
       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
       user-select:none;
-      width:165px; max-width: calc(100vw - 20px); box-sizing:border-box;
+      width:146px; /* +10% so layer label fits on one line */
+      max-width: calc(100vw - 20px); box-sizing:border-box;
     }
     #ui.partial .advanced{ display:none !important; }
     #ui.full .core, #ui.full .advanced{ display:none !important; }
@@ -91,16 +109,14 @@
     }
 
     #dragHandle{
-      display:flex; align-items:center; justify-content:space-between; gap:8px;
+      display:flex; align-items:center; justify-content:space-between; gap:6px;
       padding:6px 8px; border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,0.88);
       cursor:grab; touch-action:none;
     }
-    body.dark #dragHandle{ background:rgba(30,30,30,0.92); }
     #dragHandle:active{ cursor:grabbing; }
 
     .dots{ display:grid; grid-template-columns: repeat(3, 4px); grid-auto-rows:4px; gap:3px; opacity:0.55; }
     .dots span{ width:4px; height:4px; border-radius:50%; background:rgba(0,0,0,0.55); display:block; }
-    body.dark .dots span{ background:rgba(255,255,255,0.70); }
 
     .handleBtns{ display:flex; gap:6px; align-items:center; }
 
@@ -109,7 +125,6 @@
       border:1px solid var(--border); border-radius:999px; background:rgba(255,255,255,0.88); cursor:pointer;
       font-size:14px; line-height:1; padding:0; color:var(--text);
     }
-    body.dark .miniBtn{ background:rgba(30,30,30,0.92); }
 
     .shortcutWrap{ position:relative; }
     #shortcutCard{
@@ -122,10 +137,10 @@
       display:none;
       z-index:99999;
       color:rgba(0,0,0,0.86);
+      font-family: var(--font);
     }
-    body.dark #shortcutCard{ background:rgba(20,20,20,0.98); color:rgba(255,255,255,0.90); }
     .shortcutWrap:hover #shortcutCard{ display:block; }
-    #shortcutCard .title{ font-size:12px; font-weight:600; margin-bottom:6px; }
+    #shortcutCard .title{ font-size:12px; font-weight:700; margin-bottom:6px; }
     #shortcutCard .row{ font-size:12px; display:flex; justify-content:space-between; gap:10px; opacity:0.88; }
     #shortcutCard .row code{
       background:rgba(0,0,0,0.06); padding:1px 6px; border-radius:7px;
@@ -133,7 +148,6 @@
       font-size:11px;
       color:inherit;
     }
-    body.dark #shortcutCard .row code{ background:rgba(255,255,255,0.10); }
 
     .tool, button.action{
       border:1px solid var(--border);
@@ -142,14 +156,11 @@
       border-radius:999px; padding:7px 10px; font-size:12px; cursor:pointer;
       width:100%; box-sizing:border-box;
       display:flex; align-items:center; gap:8px; justify-content:flex-start;
+      font-family: var(--font);
     }
-    body.dark .tool, body.dark button.action{ background:rgba(30,30,30,0.92); }
-
     button.action{ border-radius:12px; padding:8px 10px; }
     .tool .ico, button.action .ico{ width:16px; text-align:center; opacity:0.90; }
     .tool.active{ background:rgba(0,0,0,0.92); border-color:rgba(0,0,0,0.92); color:white; }
-    body.dark .tool.active{ background:rgba(255,255,255,0.92); border-color:rgba(255,255,255,0.92); color:#111; }
-
     .ico.red{ color:#D7263D; opacity:1; }
 
     select{
@@ -159,8 +170,8 @@
       background:rgba(255,255,255,0.88);
       font-size:12px; cursor:pointer; width:100%; box-sizing:border-box;
       text-align:left; color:var(--text);
+      font-family: var(--font);
     }
-    body.dark select{ background:rgba(30,30,30,0.92); }
     select option{ text-align:left; }
 
     .pill{
@@ -169,8 +180,8 @@
       background:rgba(255,255,255,0.88); font-size:12px; cursor:pointer; white-space:nowrap;
       width:100%; box-sizing:border-box; justify-content:flex-start;
       color:var(--text);
+      font-family: var(--font);
     }
-    body.dark .pill{ background:rgba(30,30,30,0.92); }
     .pill input{ margin:0; }
 
     .color-select{
@@ -178,11 +189,10 @@
       border:1px solid var(--border); border-radius:999px; padding:6px 10px; background:rgba(255,255,255,0.88); cursor:pointer;
       width:100%; box-sizing:border-box;
       color:var(--text);
+      font-family: var(--font);
     }
-    body.dark .color-select{ background:rgba(30,30,30,0.92); }
     .color-left{ display:flex; align-items:center; gap:8px; min-width:0; }
     .chip{ width:16px; height:16px; border-radius:4px; border:1px solid rgba(0,0,0,0.18); box-sizing:border-box; background:#111; }
-    body.dark .chip{ border-color: rgba(255,255,255,0.18); }
     .caret{ opacity:.7; font-size:12px; flex:0 0 auto; }
 
     .palette{
@@ -190,26 +200,24 @@
       border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow);
       display:none; z-index:9999; transform-origin: top right; transform: translateX(-36px);
     }
-    body.dark .palette{ background:rgba(20,20,20,0.98); }
     .palette.open{ display:block; }
     .palette-grid{ display:grid; grid-template-columns: repeat(6, 18px); gap:8px; }
     .swatch{ width:18px; height:18px; border-radius:4px; border:1px solid rgba(0,0,0,0.18); cursor:pointer; box-sizing:border-box; }
-    body.dark .swatch{ border-color: rgba(255,255,255,0.18); }
 
     .layers-select{
       position:relative; display:flex; align-items:center; justify-content:space-between; gap:10px;
       border:1px solid var(--border); border-radius:999px; padding:6px 10px; background:rgba(255,255,255,0.88); cursor:pointer;
       width:100%; box-sizing:border-box;
       color:var(--text);
+      font-family: var(--font);
     }
-    body.dark .layers-select{ background:rgba(30,30,30,0.92); }
 
     .layers-menu{
       position:absolute; top:110%; right:0; padding:6px; background:rgba(255,255,255,0.98);
       border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow);
       display:none; z-index:9999; min-width:190px; transform-origin: top right; transform: translateX(-80px);
+      font-family: var(--font);
     }
-    body.dark .layers-menu{ background:rgba(20,20,20,0.98); }
     .layers-menu.open{ display:block; }
 
     .layer-item{
@@ -217,57 +225,28 @@
       padding:8px 10px; border-radius:10px; cursor:pointer; font-size:12px; user-select:none;
     }
     .layer-item:hover{ background:rgba(0,0,0,0.04); }
-    body.dark .layer-item:hover{ background:rgba(255,255,255,0.08); }
     .layer-left{ display:flex; align-items:center; gap:10px; min-width:0; }
     .tick{ width:16px; text-align:center; opacity:0.9; font-weight:700; }
     .layer-name{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
     .vis-dot{ width:10px; height:10px; border-radius:50%; border:1px solid rgba(0,0,0,0.22); background:rgba(0,0,0,0.10); }
-    body.dark .vis-dot{ border-color: rgba(255,255,255,0.22); background: rgba(255,255,255,0.10); }
     .layer-item.invisible .layer-name{ opacity:0.45; text-decoration: line-through; }
     .layer-item.invisible .vis-dot{ opacity:0.25; }
 
-    .exportBtn{
-      border:1px solid var(--border); background:rgba(255,255,255,0.88); color:var(--text);
-      border-radius:12px; padding:8px 10px; font-size:12px; cursor:pointer;
-      width:100%; box-sizing:border-box;
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-    }
-    body.dark .exportBtn{ background:rgba(30,30,30,0.92); }
-    .exportLeft{ display:flex; align-items:center; gap:8px; min-width:0; }
-    .exportRight{ display:flex; align-items:center; gap:6px; }
-    .exportRight input{ margin:0; transform: translateY(0.5px); }
-
-    #toast{
-      position:fixed; right:18px; bottom:18px; z-index:999999;
-      background:rgba(0,0,0,0.82); color:white;
-      padding:10px 12px; border-radius:12px;
-      font-size:12px; letter-spacing:0.1px;
-      box-shadow: 0 12px 28px rgba(0,0,0,0.22);
-      opacity:0; transform: translateY(10px);
-      pointer-events:none;
-      transition: opacity 180ms ease, transform 180ms ease;
-    }
-    #toast.show{ opacity:1; transform: translateY(0); }
-    body.dark #toast{ background:rgba(255,255,255,0.90); color:#111; }
-
     #textEditor{
       position:fixed; z-index:99999; display:none;
-      min-width:260px; max-width:min(560px, calc(100vw - 24px));
+      min-width:280px; max-width:min(560px, calc(100vw - 24px));
       background:rgba(255,255,255,0.97);
       border:1px solid rgba(0,0,0,0.22);
       border-radius:12px;
       box-shadow: 0 10px 28px rgba(0,0,0,0.14);
       padding:10px;
       color:rgba(0,0,0,0.86);
+      font-family: var(--font);
     }
-    body.dark #textEditor{
-      background:rgba(20,20,20,0.98);
-      border-color: rgba(255,255,255,0.18);
-      color:rgba(255,255,255,0.90);
-      box-shadow: 0 12px 28px rgba(0,0,0,0.55);
+    #textEditorTop{
+      display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;
     }
-    #textEditorTop{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
-    #textEditorTitle{ font-size:12px; font-weight:600; opacity:0.85; }
+    #textEditorTitle{ font-size:12px; font-weight:700; opacity:0.85; }
     #textEditorTop select{ width:auto; padding:6px 10px; }
     #textEditor textarea{
       width:100%;
@@ -282,11 +261,6 @@
       box-sizing:border-box;
       background:white;
       color:rgba(0,0,0,0.86);
-    }
-    body.dark #textEditor textarea{
-      background:rgba(30,30,30,0.95);
-      border-color: rgba(255,255,255,0.16);
-      color:rgba(255,255,255,0.92);
     }
     #textHint{ margin-top:8px; font-size:11px; opacity:0.65; }
 
@@ -321,27 +295,24 @@
             <div class="row"><span><code>Shift</code></span><span>Align line/arrow</span></div>
             <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
             <div class="row"><span><code>Del</code></span><span>Delete selection</span></div>
-            <div class="row"><span><code>1 to 9</code></span><span>Width</span></div>
-            <div class="row"><span><code>X</code></span><span>PNG Clipboard</span></div>
-            <div class="row"><span><code>V</code></span><span>PDF Export</span></div>
+            <div class="row"><span><code>1..9</code></span><span>Width</span></div>
           </div>
         </div>
 
-        <button id="btnDark" class="miniBtn" title="Toggle dark mode"><span id="glyphDark">🌙</span></button>
         <button id="btnCycle" class="miniBtn" title="Cycle toolbar"><span id="glyphCycle">▾</span></button>
       </div>
     </div>
 
     <!-- CORE -->
     <div class="core">
-      <button class="tool" id="toolPen"><span class="ico">✎</span><span>Pen</span></button>
-      <button class="tool" id="toolEraser"><span class="ico">🧽</span><span>Eraser</span></button>
-      <button class="tool" id="toolHighlighter" title="Highlighter (straight line)"><span class="ico">🖍️</span><span>Highlighter</span></button>
+      <button class="tool" id="toolPen" title="Pen (P)"><span class="ico">✎</span><span>Pen</span></button>
+      <button class="tool" id="toolEraser" title="Eraser (E)"><span class="ico">🧽</span><span>Eraser</span></button>
+      <button class="tool" id="toolHighlighter" title="Highlighter (H)"><span class="ico">🖍️</span><span>Highlighter</span></button>
 
-      <select id="shapeTool" title="Shapes">
+      <select id="shapeTool" title="Shapes (S)">
         <option value="" disabled selected>◯  Shapes</option>
         <option value="line">—  Line</option>
-        <option value="arrow">➤  Arrow</option>
+        <option value="arrow">→  Arrow</option>
         <option value="circle">◯  Circle</option>
         <option value="rect">▭  Rect</option>
         <option value="ellipse">⬭  Ellipse (e=0.9)</option>
@@ -361,15 +332,15 @@
 
     <!-- ADVANCED -->
     <div class="advanced">
-      <select id="strokeWidth" title="Line width"></select>
-      <select id="smoothing" title="Free draw line smoothing (1 = none)"></select>
-      <select id="transp" title="Transparency (1=opaque, 10=almost invisible)"></select>
+      <select id="strokeWidth" title="Width"></select>
+      <select id="smoothing" title="Smooth."></select>
+      <select id="transp" title="Transp."></select>
 
-      <button class="tool" id="toolFill" title="Fill (uses selected Color + Transp.)"><span class="ico">🪣</span><span>Fill</span></button>
-      <button class="tool" id="toolText" title="Text tool"><span class="ico">T</span><span>Text / LaTeX</span></button>
+      <button class="tool" id="toolFill" title="Fill (F)"><span class="ico">🪣</span><span>Fill</span></button>
+      <button class="tool" id="toolText" title="Text / LaTeX (T)"><span class="ico">T</span><span>Text / LaTeX</span></button>
 
-      <button class="tool" id="toolLaser" title="Laser pointer (uses current color + width)"><span class="ico red">◎</span><span>Laser</span></button>
-      <button class="tool" id="toolLasso" title="Lasso select & transform"><span class="ico">⟲</span><span>Lasso</span></button>
+      <button class="tool" id="toolLaser" title="Laser (R)"><span class="ico red">◎</span><span>Laser</span></button>
+      <button class="tool" id="toolLasso" title="Lasso (L)"><span class="ico">⟲</span><span>Lasso</span></button>
 
       <select id="bgMode" title="Background (G)">
         <option value="transparent" selected>▦  Bg: transp.</option>
@@ -377,41 +348,32 @@
         <option value="grid">⧉  Bg: grid</option>
       </select>
 
-      <label class="pill" title="Snap to grid (N)">
+      <label class="pill" title="Snap (N)">
         <input id="snap" type="checkbox" />
         ⌗  Snap
       </label>
 
-      <div class="layers-select" id="layersSelect" title="Click to select; click same layer again to toggle visibility">
+      <div class="layers-select" id="layersSelect" title="Layers">
         <div style="font-size:12px; opacity:.85;" id="layersLabel">🧱  Layers</div>
         <div class="caret">▾</div>
         <div class="layers-menu" id="layersMenu"></div>
       </div>
 
-      <button class="action" id="undo" title="Undo (active layer)"><span class="ico">↶</span><span>Undo</span></button>
-      <button class="action" id="clear" title="Clear (active layer, undoable)"><span class="ico">🗑</span><span>Clear layer</span></button>
-
-      <button class="exportBtn" id="pngClipboardBtn"
-        title='PNG to clipboard (X) (not supported when embedded). Checkbox: w/ or w/o grid.'>
-        <span class="exportLeft"><span class="ico">📋</span><span>PNG Clipb.</span></span>
-        <span class="exportRight" title="Include background grid/dots">
-          <input id="exportBg" type="checkbox" />
-        </span>
-      </button>
-
-      <button class="exportBtn" id="pdfExportBtn"
-        title='PDF export (V) (not supported when embedded). Checkbox: w/ or w/o grid.'>
-        <span class="exportLeft"><span class="ico">🧾</span><span>PDF Export</span></span>
-        <span class="exportRight" title="Include background grid/dots">
-          <input id="exportBg2" type="checkbox" />
-        </span>
-      </button>
+      <button class="action" id="undo" title="Undo (Ctrl+Z)"><span class="ico">↶</span><span>Undo</span></button>
+      <button class="action" id="clear" title="Clear"><span class="ico">🗑</span><span>Clear</span></button>
     </div>
   </div>
 
   <div id="textEditor">
     <div id="textEditorTop">
-      <div id="textEditorTitle">Enter text (LaTex syntax supported)</div>
+      <div id="textEditorTitle">Enter text (LaTeX supported)</div>
+
+      <select id="textStyleEditor" title="Font style">
+        <option value="regular" selected>Regular</option>
+        <option value="bold">Bold</option>
+        <option value="italic">Italic</option>
+      </select>
+
       <select id="textSizeEditor" title="Font size">
         <option value="10">10 pt</option>
         <option value="12">12 pt</option>
@@ -433,7 +395,6 @@
   <div id="canvas-outline"></div>
   <div id="text-overlay"></div>
   <div id="cursorHint"></div>
-  <div id="toast">Copied to clipboard</div>
 
 <script>
 /* =====================
@@ -446,27 +407,24 @@ const LASER_FADE_MS = 2000;
 
 // Hold alignment
 const HOLD_ALIGN_MS = 500;
-const STILL_EPS_PX = 7;          // tolerate jitter
-const STILL_TIME_MS = 120;       // consider still if no significant move for this long
+const STILL_EPS_PX = 7;
+const STILL_TIME_MS = 120;
 
 // Free-draw-to-line conversion
-const FREE_LINE_MAX_DEVIATION = 7;  // px max distance to best-fit line
-const FREE_LINE_MIN_LENGTH = 18;    // px
+const FREE_LINE_MAX_DEVIATION = 7;
+const FREE_LINE_MIN_LENGTH = 18;
 
 // ellipse eccentricity 0.9
 const ELLIPSE_E = 0.9;
 const ELLIPSE_MINOR_RATIO = Math.sqrt(1 - ELLIPSE_E*ELLIPSE_E);
 
 const COLORS = [
-  // line 1 (common)
   "#111111", "#D7263D", "#009E73", "#0072B2", "#FFFFFF", "#FF8A00",
-  // line 2
   "#E69F00", "#F0E442", "#56B4E9", "#CC79A7", "#00BFC4", "#D55E00",
-  // line 3 (fluorescent)
   "#FFFF00", "#39FF14", "#FF00FF", "#00FFFF", "#B026FF", "#FF1744"
 ];
 
-let tool = "pointer"; // start with NO tool
+let tool = "pointer";
 let strokeWidth = 2;
 let smoothing = 2;
 let transp = 1; // 1..10
@@ -475,8 +433,7 @@ let snapToGrid = false;
 let bgMode = "transparent";
 
 let lastNonEraserWidth = 2;
-
-let current = null;               // in-progress action
+let current = null;
 let laserTrail = [];
 
 let pointerDown=false, activePointerId=null, activePointerType="mouse", lastPressure=1;
@@ -484,47 +441,19 @@ let isShiftDown = false;
 
 const textOverlay = document.getElementById("text-overlay");
 const cursorHint = document.getElementById("cursorHint");
+let lastPointerClient = {x: 0, y: 0};
 
-let lastPointerClient = {x: 0, y: 0}; // for hint positioning
-
-// tool memory: restore pen state after laser/highlighter
+// memory to restore user pen/shapes values after highlighter/laser
 let penState = { color: currentColor, width: strokeWidth, transp, smoothing };
 
 // text tool
 let defaultTextSize = 20;
+let defaultTextStyle = "regular"; // regular|bold|italic
 const textEditor = document.getElementById("textEditor");
 const textInput  = document.getElementById("textInput");
 const textSizeEditor = document.getElementById("textSizeEditor");
+const textStyleEditor = document.getElementById("textStyleEditor");
 let textDraft = null;
-
-// toast
-const toastEl = document.getElementById("toast");
-let toastTimer=null;
-function showToast(msg){
-  toastEl.textContent = msg;
-  toastEl.classList.add("show");
-  if (toastTimer) clearTimeout(toastTimer);
-  toastTimer = setTimeout(()=>toastEl.classList.remove("show"), 900);
-}
-
-// storage
-const params = new URLSearchParams(location.search);
-const PAGE_ID = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
-const STORAGE_KEY = `p5_whiteboard_v29::${location.origin}${location.pathname}::page=${PAGE_ID}`;
-let saveTimer=null;
-function scheduleSave(){ if(saveTimer) clearTimeout(saveTimer); saveTimer=setTimeout(saveToLocalStorage, 180); }
-
-// collapse/dark
-let collapseState = "partial";
-let darkMode = false;
-
-// Highlighter memory
-let highlighterInitialized = false;
-let highlighterWidth = 20;
-let highlighterTransp = 7;
-
-// Laser first defaults
-let laserInitialized = false;
 
 // Hold alignment timers
 let holdAlignTimer = null;
@@ -533,33 +462,24 @@ let lastMovePos = {x:0,y:0};
 
 // Shapes cycling (S)
 const SHAPES = ["line","arrow","circle","rect","ellipse"];
-let shapeIndex = 0; // used for S cycling
+let shapeIndex = 0;
 
-/* =====================
-   Lasso + selection + transforms
-   ===================== */
-const HANDLE_R = 8;
-const ROT_HANDLE_R = 14;
-const ROT_MIN_RADIUS = 28;
-
+// Layers (3)
 let layers = [];
 let activeLayer = 0;
 let undoStack = Array.from({length:3}, () => []);
 const UNDO_LIMIT = 40;
 
+/* =====================
+   Lasso (move + delete only)
+   ===================== */
 let lasso = {
   points: [],
   selecting: false,
   selectedIdx: [],
   bbox: null,
-  obb: null,
-  mode: "idle",
-  handle: null,
-  moveStart: null,
-  pivot: null,
-  startOBB: null,
-  startActionsSnapshot: null,
-  liveText: null
+  mode: "idle",       // idle | move
+  moveStart: null
 };
 
 /* =====================
@@ -582,7 +502,6 @@ function pressureMultiplier(p, pointerType){
   if (!isPen && (pr === 0 || pr === 1)) return 1;
   return 0.45 + 1.10 * pr;
 }
-
 function showCursorHint(text, ms=700){
   cursorHint.textContent = text;
   cursorHint.style.left = (lastPointerClient.x + 12) + "px";
@@ -590,10 +509,137 @@ function showCursorHint(text, ms=700){
   cursorHint.classList.add("show");
   setTimeout(()=> cursorHint.classList.remove("show"), ms);
 }
-
 function getCSSNum(varName){
   const v = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
   return parseFloat(v || "0");
+}
+
+function pointInPoly(pt, poly){
+  let inside=false;
+  for (let i=0,j=poly.length-1;i<poly.length;j=i++){
+    const xi=poly[i].x, yi=poly[i].y;
+    const xj=poly[j].x, yj=poly[j].y;
+    const denom=(yj-yi)||1e-9;
+    const intersect=((yi>pt.y)!==(yj>pt.y)) && (pt.x < (xj-xi)*(pt.y-yi)/denom + xi);
+    if (intersect) inside=!inside;
+  }
+  return inside;
+}
+
+function pathBBox(a){
+  const pts=a.points || [];
+  if(!pts.length) return {x:0,y:0,w:0,h:0};
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const p of pts){
+    minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
+    maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y);
+  }
+  const pad = Math.max(6, (a.style?.baseWeight || 2) * 2);
+  return { x:minX-pad, y:minY-pad, w:(maxX-minX)+2*pad, h:(maxY-minY)+2*pad };
+}
+function ellipseBBox(a){
+  const cx=(a.a.x+a.b.x)/2, cy=(a.a.y+a.b.y)/2;
+  const major = dist(a.a.x,a.a.y,a.b.x,a.b.y);
+  const minor = major * ELLIPSE_MINOR_RATIO;
+  const ang = Math.atan2(a.b.y-a.a.y, a.b.x-a.a.x);
+  const A = major/2, B = minor/2;
+  const c=Math.cos(ang), s=Math.sin(ang);
+  const hw = Math.sqrt((A*c)**2 + (B*s)**2);
+  const hh = Math.sqrt((A*s)**2 + (B*c)**2);
+  return { x:cx-hw, y:cy-hh, w:2*hw, h:2*hh };
+}
+function actionBBox(a){
+  if (a.type==="text"){
+    const w = a.w || Math.max(40, Math.min(520, (a.size||20) * 0.62 * (a.raw?.length||1)));
+    const h = a.h || Math.max(16, Math.min(240, (a.size||20) * 1.4));
+    return { x:a.x, y:a.y, w, h };
+  }
+  if (a.type==="path") return pathBBox(a);
+  if (a.type==="ellipse") return ellipseBBox(a);
+  if (a.type==="line"||a.type==="arrow"||a.type==="rect"){
+    const minX=Math.min(a.a.x,a.b.x), minY=Math.min(a.a.y,a.b.y);
+    const maxX=Math.max(a.a.x,a.b.x), maxY=Math.max(a.a.y,a.b.y);
+    return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
+  }
+  if (a.type==="circle"){
+    return { x:a.c.x-a.r, y:a.c.y-a.r, w:2*a.r, h:2*a.r };
+  }
+  if (a.type==="fill"){
+    return { x:a.x-8, y:a.y-8, w:16, h:16 };
+  }
+  return { x:0,y:0,w:0,h:0 };
+}
+function translateAction(a,dx,dy){
+  if (a.type==="text"){ a.x+=dx; a.y+=dy; }
+  else if (a.type==="path"){ for(const p of a.points){ p.x+=dx; p.y+=dy; } }
+  else if (a.type==="ellipse"){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
+  else if (a.type==="line"||a.type==="arrow"||a.type==="rect"){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
+  else if (a.type==="circle"){ a.c.x+=dx; a.c.y+=dy; }
+  else if (a.type==="fill"){ a.x+=dx; a.y+=dy; }
+}
+function clearSelection(){
+  lasso.points=[];
+  lasso.selecting=false;
+  lasso.selectedIdx=[];
+  lasso.bbox=null;
+  lasso.mode="idle";
+  lasso.moveStart=null;
+}
+function recomputeSelectionBBox(){
+  const L=layers[activeLayer];
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for(const idx of lasso.selectedIdx){
+    const bb=actionBBox(L.actions[idx]);
+    minX=Math.min(minX,bb.x); minY=Math.min(minY,bb.y);
+    maxX=Math.max(maxX,bb.x+bb.w); maxY=Math.max(maxY,bb.y+bb.h);
+  }
+  lasso.bbox={x:minX,y:minY,w:maxX-minX,h:maxY-minY};
+}
+function lassoSelect(){
+  const poly = lasso.points.slice();
+  lasso.points=[];
+  if(poly.length<3){ clearSelection(); return; }
+
+  const L=layers[activeLayer];
+  const selected=[];
+  for(let i=0;i<L.actions.length;i++){
+    const a=L.actions[i];
+    const bb=actionBBox(a);
+    const corners=[
+      {x:bb.x,y:bb.y},{x:bb.x+bb.w,y:bb.y},
+      {x:bb.x+bb.w,y:bb.y+bb.h},{x:bb.x,y:bb.y+bb.h}
+    ];
+    const center={x:bb.x+bb.w/2,y:bb.y+bb.h/2};
+
+    let hit = corners.some(p=>pointInPoly(p,poly)) || pointInPoly(center,poly);
+    if(!hit && a.type==="path"){
+      for(const p of (a.points||[])){
+        if(pointInPoly({x:p.x,y:p.y}, poly)){ hit=true; break; }
+      }
+    }
+    if(hit) selected.push(i);
+  }
+
+  lasso.selectedIdx=selected;
+  if(!selected.length){ lasso.bbox=null; return; }
+  recomputeSelectionBBox();
+}
+function pointInBBox(x,y,bb){
+  if(!bb) return false;
+  return (x>=bb.x && x<=bb.x+bb.w && y>=bb.y && y<=bb.y+bb.h);
+}
+function deleteSelection(){
+  if(!lasso.selectedIdx.length) return;
+  pushUndo(activeLayer);
+  const L=layers[activeLayer];
+  const idxs = lasso.selectedIdx.slice().sort((a,b)=>b-a);
+  for(const idx of idxs) L.actions.splice(idx,1);
+  // keep things simple: remove stored fills if structure changed
+  L.actions = L.actions.filter(a => a.type !== "fill");
+
+  clearSelection();
+  rebuildLayerBuffer(activeLayer);
+  rebuildTextOverlay();
 }
 
 /* =====================
@@ -612,7 +658,6 @@ function undoActiveLayer(){
   layers[activeLayer].visible = (typeof snap.visible==="boolean") ? snap.visible : true;
   rebuildLayerBuffer(activeLayer);
   rebuildTextOverlay();
-  scheduleSave();
 }
 
 /* =====================
@@ -632,7 +677,6 @@ function setup(){
   }
 
   initUI();
-  loadFromLocalStorage();
   rebuildAllBuffers();
   rebuildTextOverlay();
 
@@ -675,8 +719,7 @@ function draw(){
     image(layers[i].pg,0,0);
   }
 
-  // current preview (pen/eraser now also preview-only)
-  if (current && current.type !== "laser") drawCurrentPreview(current);
+  if (current && current.type !== "laser" && tool!=="lasso") drawCurrentPreview(current);
 
   drawLassoOverlay();
   updateLaserTrail();
@@ -709,8 +752,7 @@ function drawBackgroundOverlay(target, mode){
 
   if (mode==="grid"){
     target.push();
-    if (document.body.classList.contains("dark")) target.stroke(255, gridA);
-    else target.stroke(0, gridA);
+    target.stroke(0, gridA);
     target.strokeWeight(1);
     for (let x=0;x<width;x+=GRID_STEP) target.line(x,0,x,height);
     for (let y=0;y<height;y+=GRID_STEP) target.line(0,y,width,y);
@@ -720,8 +762,7 @@ function drawBackgroundOverlay(target, mode){
 
   target.push();
   target.noStroke();
-  if (document.body.classList.contains("dark")) target.fill(255, dotsA);
-  else target.fill(0, dotsA);
+  target.fill(0, dotsA);
   for (let x=0;x<width;x+=GRID_STEP){
     for (let y=0;y<height;y+=GRID_STEP){
       target.circle(x,y,dotsR);
@@ -740,22 +781,6 @@ function makeStyleForCurrent(pressure, pointerType){
   if (tool==="eraser") return { eraser:true, baseWeight:strokeWidth, weight:w, color:null, alpha:255, smoothing };
   return { eraser:false, baseWeight:strokeWidth, weight:w, color:currentColor, alpha, smoothing };
 }
-
-function beginStrokeStyle(g, style){
-  if (style.eraser){
-    g.erase(); g.stroke(0);
-    g.strokeWeight(style.weight);
-    g.strokeCap(ROUND); g.strokeJoin(ROUND); g.noFill();
-  } else {
-    g.noErase();
-    const col = color(style.color);
-    col.setAlpha(style.alpha ?? 255);
-    g.stroke(col);
-    g.strokeWeight(style.weight);
-    g.strokeCap(ROUND); g.strokeJoin(ROUND); g.noFill();
-  }
-}
-function endStrokeStyle(g, style){ if(style.eraser) g.noErase(); }
 
 function drawArrowHead(target, x1,y1,x2,y2, style){
   const ang = Math.atan2(y2-y1, x2-x1);
@@ -804,11 +829,10 @@ function drawShapeAction(a, target){
 }
 
 function drawCurrentPreview(a){
-  // pen/eraser path preview
   if (a.type==="path"){
     push();
     const pts=a.points;
-    for(let k=1;k<pts.length;k++){
+    for (let k=1;k<pts.length;k++){
       const p0=pts[k-1], p1=pts[k];
       const avgP=((p0.p??1)+(p1.p??1))/2;
       const mult=pressureMultiplier(avgP, a.pointerType||"pen");
@@ -829,7 +853,6 @@ function drawCurrentPreview(a){
     return;
   }
 
-  // shapes preview
   if (["line","arrow","circle","rect","ellipse"].includes(a.type)){
     push();
     drawShapeAction(a, this);
@@ -838,7 +861,7 @@ function drawCurrentPreview(a){
 }
 
 /* =====================
-   Fill tool (safe)
+   Fill tool
    ===================== */
 function floodFillOnLayer(layerIndex, x, y, fillHex, fillAlpha){
   const L = layers[layerIndex];
@@ -898,13 +921,12 @@ function rebuildLayerBuffer(i){
   const L=layers[i];
   L.pg.clear();
 
-  // draw all non-fill, non-text actions
   for (const a of L.actions){
     if (a.type==="text" || a.type==="fill") continue;
 
     if (a.type==="path"){
       const pts=a.points;
-      for(let k=1;k<pts.length;k++){
+      for (let k=1;k<pts.length;k++){
         const p0=pts[k-1], p1=pts[k];
         const avgP=((p0.p??1)+(p1.p??1))/2;
         const mult=pressureMultiplier(avgP, "pen");
@@ -931,7 +953,6 @@ function rebuildLayerBuffer(i){
     L.pg.pop();
   }
 
-  // apply fills last
   for (const a of L.actions){
     if (a.type!=="fill") continue;
     floodFillOnLayer(i, a.x, a.y, a.color, a.alpha);
@@ -969,6 +990,31 @@ function drawLaserTrail(){
 }
 
 /* =====================
+   Lasso overlay
+   ===================== */
+function drawLassoOverlay(){
+  if (tool==="lasso" && lasso.selecting && lasso.points.length){
+    push(); noFill();
+    stroke(0, 90);
+    strokeWeight(2);
+    beginShape(); for(const p of lasso.points) vertex(p.x,p.y); endShape();
+    pop();
+  }
+
+  if (lasso.selectedIdx.length && lasso.bbox){
+    const bb = lasso.bbox;
+    push();
+    noFill();
+    stroke(0, 140);
+    strokeWeight(2);
+    drawingContext.setLineDash([6,6]);
+    rect(bb.x, bb.y, bb.w, bb.h);
+    drawingContext.setLineDash([]);
+    pop();
+  }
+}
+
+/* =====================
    Line/arrow alignment
    ===================== */
 function maybeAlignLineLike(a){
@@ -986,24 +1032,20 @@ function armHoldAlignTimer(){
   holdAlignTimer = setTimeout(()=>{
     if (!current) return;
 
-    // line/arrow tool: snap to H/V
     if (current.type==="line" || current.type==="arrow"){
       maybeAlignLineLike(current);
       return;
     }
 
-    // pen free-draw: if the in-progress stroke is close to a straight line,
-    // convert preview stroke into a snapped line object (H/V).
     if (current.type==="path" && tool==="pen"){
       const lineObj = maybeConvertPathToAxisLine(current);
       if (lineObj){
-        current = lineObj; // becomes a line action preview
+        current = lineObj;
         maybeAlignLineLike(current);
       }
     }
   }, HOLD_ALIGN_MS);
 }
-
 function isStill(now, x, y){
   const moved = dist2(x,y,lastMovePos.x,lastMovePos.y) > STILL_EPS_PX*STILL_EPS_PX;
   if (moved){
@@ -1014,8 +1056,6 @@ function isStill(now, x, y){
   }
   return (now - lastSignificantMoveAt) > STILL_TIME_MS;
 }
-
-// distance of point to line AB
 function pointLineDist(px,py, ax,ay, bx,by){
   const vx=bx-ax, vy=by-ay;
   const wx=px-ax, wy=py-ay;
@@ -1026,7 +1066,6 @@ function pointLineDist(px,py, ax,ay, bx,by){
   const projy = ay + t*vy;
   return Math.hypot(px-projx, py-projy);
 }
-
 function maybeConvertPathToAxisLine(pathAction){
   const pts = pathAction.points || [];
   if (pts.length < 3) return null;
@@ -1052,468 +1091,34 @@ function maybeConvertPathToAxisLine(pathAction){
 }
 
 /* =====================
-   Lasso transforms (FIXED move)
+   Text overlay + MathJax v2 SVG
    ===================== */
-function clearSelection(){
-  lasso.selectedIdx=[];
-  lasso.bbox=null;
-  lasso.obb=null;
-  lasso.points=[];
-  lasso.selecting=false;
-  lasso.mode="idle";
-  lasso.handle=null;
-  lasso.moveStart=null;
-  lasso.pivot=null;
-  lasso.startOBB=null;
-  lasso.startActionsSnapshot=null;
-  lasso.liveText=null;
+function typesetTextOverlay(){
+  if (!window.MathJax || !MathJax.Hub) return;
+  MathJax.Hub.Queue(["Typeset", MathJax.Hub, textOverlay]);
 }
-function deleteSelection(){
-  if(!lasso.selectedIdx.length) return;
-
-  pushUndo(activeLayer);
-
-  const L = layers[activeLayer];
-
-  const idxs = lasso.selectedIdx.slice().sort((a,b)=>b-a);
-  for(const idx of idxs) L.actions.splice(idx,1);
-
-  // safety: remove fills if structure changed
-  L.actions = L.actions.filter(a => a.type !== "fill");
-
-  clearSelection();
-  rebuildLayerBuffer(activeLayer);
-  rebuildTextOverlay();
-  scheduleSave();
-}
-
-function pointInPoly(pt, poly){
-  let inside=false;
-  for (let i=0,j=poly.length-1;i<poly.length;j=i++){
-    const xi=poly[i].x, yi=poly[i].y;
-    const xj=poly[j].x, yj=poly[j].y;
-    const denom=(yj-yi)||1e-9;
-    const intersect=((yi>pt.y)!==(yj>pt.y)) && (pt.x < (xj-xi)*(pt.y-yi)/denom + xi);
-    if (intersect) inside=!inside;
-  }
-  return inside;
-}
-
-function pathBBox(a){
-  const pts=a.points || [];
-  if(!pts.length) return {x:0,y:0,w:0,h:0};
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  for(const p of pts){
-    minX=Math.min(minX,p.x); minY=Math.min(minY,p.y);
-    maxX=Math.max(maxX,p.x); maxY=Math.max(maxY,p.y);
-  }
-  const pad = Math.max(6, (a.style?.baseWeight || 2) * 2);
-  return { x:minX-pad, y:minY-pad, w:(maxX-minX)+2*pad, h:(maxY-minY)+2*pad };
-}
-
-function ellipseBBox(a){
-  const cx=(a.a.x+a.b.x)/2, cy=(a.a.y+a.b.y)/2;
-  const major = dist(a.a.x,a.a.y,a.b.x,a.b.y);
-  const minor = major * ELLIPSE_MINOR_RATIO;
-  const ang = Math.atan2(a.b.y-a.a.y, a.b.x-a.a.x);
-  const A = major/2, B = minor/2;
-  const c=Math.cos(ang), s=Math.sin(ang);
-  const hw = Math.sqrt((A*c)**2 + (B*s)**2);
-  const hh = Math.sqrt((A*s)**2 + (B*c)**2);
-  return { x:cx-hw, y:cy-hh, w:2*hw, h:2*hh };
-}
-
-function actionBBox(a){
-  if (a.type==="text"){
-    const w = a.w || Math.max(40, Math.min(520, (a.size||20) * 0.62 * (a.raw?.length||1)));
-    const h = a.h || Math.max(16, Math.min(240, (a.size||20) * 1.4));
-    return { x:a.x, y:a.y, w, h };
-  }
-  if (a.type==="path") return pathBBox(a);
-  if (a.type==="ellipse") return ellipseBBox(a);
-  if (a.type==="line"||a.type==="arrow"||a.type==="rect"){
-    const minX=Math.min(a.a.x,a.b.x), minY=Math.min(a.a.y,a.b.y);
-    const maxX=Math.max(a.a.x,a.b.x), maxY=Math.max(a.a.y,a.b.y);
-    return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
-  }
-  if (a.type==="circle"){
-    return { x:a.c.x-a.r, y:a.c.y-a.r, w:2*a.r, h:2*a.r };
-  }
-  if (a.type==="fill"){
-    return { x:a.x-8, y:a.y-8, w:16, h:16 };
-  }
-  return { x:0,y:0,w:0,h:0 };
-}
-
-function translateAction(a,dx,dy){
-  if (a.type==="text"){ a.x+=dx; a.y+=dy; }
-  else if (a.type==="path"){ for(const p of a.points){ p.x+=dx; p.y+=dy; } }
-  else if (a.type==="ellipse"){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
-  else if (a.type==="line"||a.type==="arrow"||a.type==="rect"){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
-  else if (a.type==="circle"){ a.c.x+=dx; a.c.y+=dy; }
-  else if (a.type==="fill"){ a.x+=dx; a.y+=dy; }
-}
-
-function rotateVec(v, ang){
-  const s=Math.sin(ang), c=Math.cos(ang);
-  return { x: v.x*c - v.y*s, y: v.x*s + v.y*c };
-}
-function rotatePoint(p, c, ang){
-  const v={x:p.x-c.x,y:p.y-c.y};
-  const vr=rotateVec(v, ang);
-  return { x:c.x+vr.x, y:c.y+vr.y };
-}
-function toLocal(p, c, ang){
-  const v={x:p.x-c.x,y:p.y-c.y};
-  return rotateVec(v, -ang);
-}
-function fromLocal(v, c, ang){
-  const vr=rotateVec(v, ang);
-  return { x:c.x+vr.x, y:c.y+vr.y };
-}
-
-function rotateAction(a, center, ang){
-  if (a.type==="fill") return;
-  if (a.type==="text"){
-    const p = rotatePoint({x:a.x, y:a.y}, center, ang);
-    a.x=p.x; a.y=p.y;
-  } else if (a.type==="path"){
-    for(const pt of a.points){
-      const p = rotatePoint({x:pt.x,y:pt.y}, center, ang);
-      pt.x=p.x; pt.y=p.y;
-    }
-  } else if (a.type==="circle"){
-    const p = rotatePoint({x:a.c.x,y:a.c.y}, center, ang);
-    a.c.x=p.x; a.c.y=p.y;
+function applyTextStyleToNode(node, style){
+  node.style.fontFamily = '"Libertinus Sans", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial';
+  if (style === "bold"){
+    node.style.fontWeight = "700";
+    node.style.fontStyle = "normal";
+  } else if (style === "italic"){
+    node.style.fontWeight = "400";
+    node.style.fontStyle = "italic";
   } else {
-    const pa = rotatePoint({x:a.a.x,y:a.a.y}, center, ang);
-    const pb = rotatePoint({x:a.b.x,y:a.b.y}, center, ang);
-    a.a=pa; a.b=pb;
+    node.style.fontWeight = "400";
+    node.style.fontStyle = "normal";
   }
 }
-
-function scaleAction(a, center, kx, ky){
-  if (a.type==="fill") return;
-  if (a.type==="text"){
-    const v={x:a.x-center.x, y:a.y-center.y};
-    a.x = center.x + v.x*kx;
-    a.y = center.y + v.y*ky;
-  } else if (a.type==="path"){
-    for(const pt of a.points){
-      const v={x:pt.x-center.x, y:pt.y-center.y};
-      pt.x = center.x + v.x*kx;
-      pt.y = center.y + v.y*ky;
-    }
-  } else if (a.type==="circle"){
-    const v={x:a.c.x-center.x, y:a.c.y-center.y};
-    a.c.x = center.x + v.x*kx;
-    a.c.y = center.y + v.y*ky;
-    const k=(Math.abs(kx)+Math.abs(ky))/2;
-    a.r *= k;
-  } else {
-    const va={x:a.a.x-center.x, y:a.a.y-center.y};
-    const vb={x:a.b.x-center.x, y:a.b.y-center.y};
-    a.a.x = center.x + va.x*kx; a.a.y = center.y + va.y*ky;
-    a.b.x = center.x + vb.x*kx; a.b.y = center.y + vb.y*ky;
-  }
-}
-
-function recomputeSelectionBBox(){
-  const L=layers[activeLayer];
-  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  for(const idx of lasso.selectedIdx){
-    const bb=actionBBox(L.actions[idx]);
-    minX=Math.min(minX,bb.x); minY=Math.min(minY,bb.y);
-    maxX=Math.max(maxX,bb.x+bb.w); maxY=Math.max(maxY,bb.y+bb.h);
-  }
-  lasso.bbox={x:minX,y:minY,w:maxX-minX,h:maxY-minY};
-}
-
-function snapshotSelectedActions(){
-  const L=layers[activeLayer];
-  return lasso.selectedIdx.map(i => JSON.parse(JSON.stringify(L.actions[i])));
-}
-function restoreSelectedActions(snapshot){
-  const L=layers[activeLayer];
-  for(let k=0;k<lasso.selectedIdx.length;k++){
-    const idx = lasso.selectedIdx[k];
-    L.actions[idx] = snapshot[k];
-  }
-}
-
-function obbCorners(obb){
-  const c={x:obb.cx,y:obb.cy};
-  const ptsLocal=[
-    {x:-obb.hw,y:-obb.hh},
-    {x:+obb.hw,y:-obb.hh},
-    {x:+obb.hw,y:+obb.hh},
-    {x:-obb.hw,y:+obb.hh}
-  ];
-  return ptsLocal.map(v => fromLocal(v,c,obb.ang));
-}
-function handlePositionsOBB(obb){
-  const c={x:obb.cx,y:obb.cy};
-  const tl = fromLocal({x:-obb.hw,y:-obb.hh}, c, obb.ang);
-  const tr = fromLocal({x:+obb.hw,y:-obb.hh}, c, obb.ang);
-  const br = fromLocal({x:+obb.hw,y:+obb.hh}, c, obb.ang);
-  const bl = fromLocal({x:-obb.hw,y:+obb.hh}, c, obb.ang);
-
-  const tm = fromLocal({x:0,y:-obb.hh}, c, obb.ang);
-  const bm = fromLocal({x:0,y:+obb.hh}, c, obb.ang);
-  const lm = fromLocal({x:-obb.hw,y:0}, c, obb.ang);
-  const rm = fromLocal({x:+obb.hw,y:0}, c, obb.ang);
-
-  const rot = fromLocal({x:0,y:-obb.hh-30}, c, obb.ang);
-  return { tl,tr,br,bl, tm,bm,lm,rm, rot };
-}
-function hitHandleOBB(x,y){
-  if(!lasso.obb || !lasso.selectedIdx.length) return null;
-  const h = handlePositionsOBB(lasso.obb);
-  const candidates = [
-    ["tl",h.tl,HANDLE_R],["tr",h.tr,HANDLE_R],["br",h.br,HANDLE_R],["bl",h.bl,HANDLE_R],
-    ["tm",h.tm,HANDLE_R],["bm",h.bm,HANDLE_R],["lm",h.lm,HANDLE_R],["rm",h.rm,HANDLE_R],
-    ["rot",h.rot,ROT_HANDLE_R]
-  ];
-  for(const [name,p,r] of candidates){
-    if(dist2(x,y,p.x,p.y) <= r*r) return name;
-  }
-  return null;
-}
-function pointInOBB(x,y,obb){
-  const c={x:obb.cx,y:obb.cy};
-  const v=toLocal({x,y}, c, obb.ang);
-  return (v.x>=-obb.hw && v.x<=obb.hw && v.y>=-obb.hh && v.y<=obb.hh);
-}
-
-function lassoSelect(){
-  const poly = lasso.points.slice();
-  lasso.points=[];
-  if(poly.length<3){ clearSelection(); return; }
-
-  const L=layers[activeLayer];
-  const selected=[];
-  for(let i=0;i<L.actions.length;i++){
-    const a=L.actions[i];
-    const bb=actionBBox(a);
-    const corners=[
-      {x:bb.x,y:bb.y},{x:bb.x+bb.w,y:bb.y},
-      {x:bb.x+bb.w,y:bb.y+bb.h},{x:bb.x,y:bb.y+bb.h}
-    ];
-    const center={x:bb.x+bb.w/2,y:bb.y+bb.h/2};
-
-    let hit = corners.some(p=>pointInPoly(p,poly)) || pointInPoly(center,poly);
-    if(!hit && a.type==="path"){
-      for(const p of (a.points||[])){
-        if(pointInPoly({x:p.x,y:p.y}, poly)){ hit=true; break; }
-      }
-    }
-    if(hit) selected.push(i);
-  }
-
-  lasso.selectedIdx=selected;
-  if(!selected.length){ lasso.bbox=null; lasso.obb=null; return; }
-
-  recomputeSelectionBBox();
-  lasso.obb = {
-    cx: lasso.bbox.x + lasso.bbox.w/2,
-    cy: lasso.bbox.y + lasso.bbox.h/2,
-    hw: Math.max(6, lasso.bbox.w/2),
-    hh: Math.max(6, lasso.bbox.h/2),
-    ang: 0
-  };
-}
-
-function beginTransformMode(mode, handle, x, y){
-  pushUndo(activeLayer);
-  lasso.mode = mode;
-  lasso.handle = handle;
-  lasso.moveStart = {x,y};            // IMPORTANT: used as previous point for move
-  lasso.startActionsSnapshot = snapshotSelectedActions();
-  lasso.startOBB = JSON.parse(JSON.stringify(lasso.obb));
-  lasso.pivot = { x: lasso.startOBB.cx, y: lasso.startOBB.cy };
-  lasso.liveText=null;
-}
-
-function applyMove(dx,dy){
-  const L=layers[activeLayer];
-  for(const idx of lasso.selectedIdx) translateAction(L.actions[idx], dx, dy);
-  lasso.obb.cx += dx; lasso.obb.cy += dy;
-}
-function applyRotateFromPointer(x,y){
-  const c=lasso.pivot;
-  const v0 = { x: lasso.moveStart.x - c.x, y: lasso.moveStart.y - c.y };
-  const v1 = { x: x - c.x, y: y - c.y };
-  const r0=Math.hypot(v0.x,v0.y);
-  const r1=Math.hypot(v1.x,v1.y);
-  if (Math.min(r0,r1) < ROT_MIN_RADIUS){ lasso.liveText = { text:"0°" }; return; }
-
-  const cross = v0.x*v1.y - v0.y*v1.x;
-  const dot   = v0.x*v1.x + v0.y*v1.y;
-  const delta = Math.atan2(cross, dot);
-
-  const L=layers[activeLayer];
-  restoreSelectedActions(lasso.startActionsSnapshot);
-  for(const idx of lasso.selectedIdx) rotateAction(L.actions[idx], c, delta);
-
-  lasso.obb.ang = lasso.startOBB.ang + delta;
-
-  const deg = Math.round(delta * 180/Math.PI);
-  lasso.liveText = { text:`${deg>=0?"+":""}${deg}°` };
-}
-function scaleFactorsFromPointer(x,y){
-  const ob0 = lasso.startOBB;
-  const c = {x:ob0.cx, y:ob0.cy};
-  const pl = toLocal({x,y}, c, ob0.ang);
-
-  const hw=ob0.hw, hh=ob0.hh;
-  let hx=0, hy=0;
-  const h = lasso.handle;
-
-  if (h==="tl"){hx=-hw; hy=-hh;}
-  if (h==="tr"){hx=+hw; hy=-hh;}
-  if (h==="br"){hx=+hw; hy=+hh;}
-  if (h==="bl"){hx=-hw; hy=+hh;}
-  if (h==="tm"){hx=0;   hy=-hh;}
-  if (h==="bm"){hx=0;   hy=+hh;}
-  if (h==="lm"){hx=-hw; hy=0;}
-  if (h==="rm"){hx=+hw; hy=0;}
-
-  let kx=1, ky=1;
-  if (hx!==0) kx = pl.x / hx;
-  if (hy!==0) ky = pl.y / hy;
-
-  kx = clamp(kx, 0.1, 10);
-  ky = clamp(ky, 0.1, 10);
-
-  const isCorner = (h==="tl"||h==="tr"||h==="br"||h==="bl");
-  const isMidX = (h==="lm"||h==="rm");
-  const isMidY = (h==="tm"||h==="bm");
-
-  if (isCorner){
-    const k=Math.max(Math.abs(kx),Math.abs(ky));
-    kx=k; ky=k;
-  } else if (isMidX){
-    ky=1;
-  } else if (isMidY){
-    kx=1;
-  }
-  return {kx,ky};
-}
-function applyScaleFromPointer(x,y){
-  const c=lasso.pivot;
-  const {kx,ky} = scaleFactorsFromPointer(x,y);
-
-  const L=layers[activeLayer];
-  restoreSelectedActions(lasso.startActionsSnapshot);
-  for(const idx of lasso.selectedIdx) scaleAction(L.actions[idx], c, kx, ky);
-
-  lasso.obb.ang = lasso.startOBB.ang;
-  lasso.obb.hw  = Math.max(6, lasso.startOBB.hw * kx);
-  lasso.obb.hh  = Math.max(6, lasso.startOBB.hh * ky);
-  lasso.obb.cx  = lasso.startOBB.cx;
-  lasso.obb.cy  = lasso.startOBB.cy;
-
-  if (Math.abs(kx-ky)<0.02){
-    const pct = Math.round(kx*100);
-    lasso.liveText = { text:`${pct>=100?"+":""}${pct}%` };
-  } else {
-    const px=Math.round(kx*100), py=Math.round(ky*100);
-    lasso.liveText = { text:`X ${px}%  Y ${py}%` };
-  }
-}
-function commitTransform(){
-  rebuildLayerBuffer(activeLayer);
-  rebuildTextOverlay();
-  scheduleSave();
-  lasso.startActionsSnapshot=null;
-  lasso.startOBB=null;
-  lasso.mode="idle";
-  lasso.handle=null;
-  lasso.liveText=null;
-}
-function drawRotateHandleIcon(x,y,ang){
-  push();
-  translate(x,y);
-  rotate(ang);
-  noFill();
-  stroke(document.body.classList.contains("dark") ? 255 : 0, 170);
-  strokeWeight(2);
-  arc(0,0,18,18, -PI*0.15, PI*1.05);
-  const ax = 9*Math.cos(PI*1.05), ay = 9*Math.sin(PI*1.05);
-  line(ax,ay, ax-4, ay-1);
-  line(ax,ay, ax-1, ay-4);
-  pop();
-}
-function drawLassoOverlay(){
-  if (tool==="lasso" && lasso.selecting && lasso.points.length){
-    push(); noFill();
-    stroke(document.body.classList.contains("dark") ? 255 : 0, 80);
-    strokeWeight(2);
-    beginShape(); for(const p of lasso.points) vertex(p.x,p.y); endShape();
-    pop();
-  }
-
-  if (lasso.selectedIdx.length && lasso.obb){
-    const obb = lasso.obb;
-    const corners = obbCorners(obb);
-
-    push();
-    noFill();
-    stroke(document.body.classList.contains("dark") ? 255 : 0, 130);
-    strokeWeight(2);
-    drawingContext.setLineDash([6,6]);
-    beginShape(); for(const p of corners) vertex(p.x,p.y); endShape(CLOSE);
-    drawingContext.setLineDash([]);
-    pop();
-
-    const h = handlePositionsOBB(obb);
-
-    push();
-    fill(255); stroke(document.body.classList.contains("dark") ? 255 : 0, 170); strokeWeight(2);
-    const pts = [h.tl,h.tr,h.br,h.bl,h.tm,h.bm,h.lm,h.rm];
-    for(const p of pts) circle(p.x,p.y, HANDLE_R*2);
-
-    stroke(document.body.classList.contains("dark") ? 255 : 0, 140);
-    const topMid = fromLocal({x:0,y:-obb.hh}, {x:obb.cx,y:obb.cy}, obb.ang);
-    line(topMid.x, topMid.y, h.rot.x, h.rot.y);
-    fill(255);
-    circle(h.rot.x,h.rot.y, ROT_HANDLE_R*2);
-    drawRotateHandleIcon(h.rot.x,h.rot.y, obb.ang);
-    pop();
-
-    if ((lasso.mode==="scale" || lasso.mode==="rotate") && lasso.liveText?.text){
-      const txt=lasso.liveText.text;
-      push();
-      textAlign(CENTER,CENTER);
-      textSize(14);
-      noStroke();
-      fill(255, 230);
-      rectMode(CENTER);
-      rect(obb.cx,obb.cy, Math.max(72, txt.length*9), 28, 10);
-      fill(0, 200);
-      text(txt, obb.cx, obb.cy+1);
-      pop();
-    }
-  }
-}
-
-/* =====================
-   Text overlay + MathJax
-   ===================== */
-async function waitForMathJaxReady(){
-  if (!window.MathJax){ await new Promise(r=>setTimeout(r,120)); return waitForMathJaxReady(); }
-  if (MathJax.startup?.promise) await MathJax.startup.promise;
-}
-
 function rebuildTextOverlay(){
   textOverlay.innerHTML = "";
 
-  for(let li=0; li<3; li++){
-    if(!layers[li].visible) continue;
+  for (let li=0; li<3; li++){
+    if (!layers[li].visible) continue;
     const actions = layers[li].actions;
-    for(let i=0;i<actions.length;i++){
+    for (let i=0;i<actions.length;i++){
       const a = actions[i];
-      if(a.type!=="text") continue;
+      if (a.type!=="text") continue;
 
       const div = document.createElement("div");
       div.className = "text-box";
@@ -1521,15 +1126,17 @@ function rebuildTextOverlay(){
       div.style.top  = a.y + "px";
       div.style.fontSize = (a.size || 20) + "px";
       div.style.pointerEvents = (tool==="text" || tool==="pointer") ? "auto" : "none";
+
+      applyTextStyleToNode(div, a.style || "regular");
       div.textContent = a.raw;
 
       div.dataset.layer = String(li);
       div.dataset.index = String(i);
 
       div.addEventListener("pointerdown",(ev)=>{
-        if(tool==="text"){
+        if (tool==="text"){
           ev.stopPropagation();
-          openTextEditor(a.x, a.y, a.raw, a.size, i, li);
+          openTextEditor(a.x, a.y, a.raw, a.size, a.style, i, li);
         }
       });
 
@@ -1537,41 +1144,42 @@ function rebuildTextOverlay(){
     }
   }
 
-  (async ()=>{
-    try{
-      await waitForMathJaxReady();
-      if (MathJax.typesetPromise) await MathJax.typesetPromise([textOverlay]);
-
-      for(let li=0; li<3; li++){
-        const nodes = textOverlay.querySelectorAll(`.text-box[data-layer="${li}"]`);
-        nodes.forEach(node=>{
-          const idx = parseInt(node.dataset.index,10);
-          const act = layers[li].actions[idx];
-          if(act && act.type==="text"){
-            act.w = node.offsetWidth;
-            act.h = node.offsetHeight;
-          }
-        });
-      }
-    }catch(e){
-      console.warn("MathJax typeset failed", e);
+  setTimeout(()=>{
+    typesetTextOverlay();
+    if (window.MathJax && MathJax.Hub){
+      MathJax.Hub.Queue(()=>{
+        for (let li=0; li<3; li++){
+          const nodes = textOverlay.querySelectorAll(`.text-box[data-layer="${li}"]`);
+          nodes.forEach(node=>{
+            const idx = parseInt(node.dataset.index,10);
+            const act = layers[li].actions[idx];
+            if (act && act.type==="text"){
+              act.w = node.offsetWidth;
+              act.h = node.offsetHeight;
+            }
+          });
+        }
+      });
     }
-  })();
+  }, 0);
 }
 
-function openTextEditor(x,y,raw,size,actionIndex, layerIndex){
-  clearSelection();
+function openTextEditor(x,y,raw,size,style,actionIndex, layerIndex){
   const li = (typeof layerIndex === "number") ? layerIndex : activeLayer;
 
   const s = size || defaultTextSize || 20;
   defaultTextSize = s;
   textSizeEditor.value = String(s);
 
-  textDraft={ layer:li, actionIndex, x,y, raw, size:s };
+  const st = style || defaultTextStyle || "regular";
+  defaultTextStyle = st;
+  textStyleEditor.value = st;
+
+  textDraft={ layer:li, actionIndex, x,y, raw, size:s, style:st };
   textEditor.style.display="block";
   textInput.value = raw || "";
 
-  const pad=10, ew=380, eh=180;
+  const pad=10, ew=420, eh=220;
   let left = clamp(x+pad, 8, window.innerWidth-ew-8);
   let top  = clamp(y+pad, 8, window.innerHeight-eh-8);
   textEditor.style.left = `${left}px`;
@@ -1583,7 +1191,11 @@ textSizeEditor.addEventListener("change", ()=>{
   const s = parseInt(textSizeEditor.value,10);
   defaultTextSize = s;
   if (textDraft) textDraft.size = s;
-  scheduleSave();
+});
+textStyleEditor.addEventListener("change", ()=>{
+  const st = textStyleEditor.value;
+  defaultTextStyle = st;
+  if (textDraft) textDraft.style = st;
 });
 function cancelTextEdit(){ textEditor.style.display="none"; textDraft=null; }
 function commitTextEdit(){
@@ -1594,244 +1206,20 @@ function commitTextEdit(){
 
   pushUndo(textDraft.layer);
 
-  const action = { type:"text", x:textDraft.x, y:textDraft.y, raw, size:textDraft.size || defaultTextSize, w:null, h:null };
+  const action = {
+    type:"text",
+    x:textDraft.x, y:textDraft.y,
+    raw,
+    size:textDraft.size || defaultTextSize,
+    style:textDraft.style || defaultTextStyle,
+    w:null, h:null
+  };
+
   if (textDraft.actionIndex==null) L.actions.push(action);
   else L.actions[textDraft.actionIndex] = action;
 
   cancelTextEdit();
   rebuildTextOverlay();
-  scheduleSave();
-}
-
-/* =====================
-   Export with text rendering:
-   - Export at EXACT current screen pixel dimensions
-   - Render plain text with canvas fillText
-   - Render $...$ / $$...$$ segments using MathJax.tex2svg
-   ===================== */
-function splitMathSegments(str){
-  // returns [{type:"text"|"math", value, display:boolean}]
-  const out=[];
-  let i=0;
-  while(i<str.length){
-    // $$...$$
-    if (str[i]==="$" && str[i+1]==="$"){
-      const j = str.indexOf("$$", i+2);
-      if (j!==-1){
-        out.push({type:"math", value: str.slice(i+2,j), display:true});
-        i = j+2;
-        continue;
-      }
-    }
-    // $...$
-    if (str[i]==="$"){
-      const j = str.indexOf("$", i+1);
-      if (j!==-1){
-        out.push({type:"math", value: str.slice(i+1,j), display:false});
-        i = j+1;
-        continue;
-      }
-    }
-    // normal text until next $
-    const j = str.indexOf("$", i);
-    if (j===-1){
-      out.push({type:"text", value: str.slice(i), display:false});
-      break;
-    } else {
-      out.push({type:"text", value: str.slice(i,j), display:false});
-      i = j;
-    }
-  }
-  return out;
-}
-
-async function texToSvgImage(tex, display){
-  await waitForMathJaxReady();
-  const node = await MathJax.tex2svgPromise(tex, { display });
-  const svg = node.querySelector("svg");
-  if (!svg) return null;
-
-  svg.setAttribute("xmlns","http://www.w3.org/2000/svg");
-  const vb = svg.getAttribute("viewBox");
-  let vbW=0, vbH=0;
-  if (vb){
-    const p = vb.split(/\s+/).map(Number);
-    vbW = p[2]||0; vbH=p[3]||0;
-  }
-  const wAttr = svg.getAttribute("width") || "";
-  const hAttr = svg.getAttribute("height") || "";
-  // MathJax sets width/height in ex; viewBox is most reliable.
-
-  const str = new XMLSerializer().serializeToString(svg);
-  const blob = new Blob([str], {type:"image/svg+xml;charset=utf-8"});
-  const url = URL.createObjectURL(blob);
-
-  const img = await new Promise((resolve)=>{
-    const im = new Image();
-    im.onload = ()=>resolve(im);
-    im.onerror = ()=>resolve(null);
-    im.src = url;
-  });
-  URL.revokeObjectURL(url);
-  return { img, vbW, vbH };
-}
-
-function setCanvasTextStyle(ctx, sizePx){
-  // decent match for Slides default + LaTeX-ish look
-  ctx.font = `${sizePx}px "STIX Two Text", "Times New Roman", Times, serif`;
-  ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = document.body.classList.contains("dark") ? "#ffffff" : "#000000";
-}
-
-async function drawTextActionsToCtx(ctx){
-  for (let li=0; li<3; li++){
-    if(!layers[li].visible) continue;
-    for (const a of layers[li].actions){
-      if(a.type!=="text") continue;
-
-      const size = a.size || 20;
-      setCanvasTextStyle(ctx, size);
-
-      let x = a.x;
-      let yTop = a.y;
-
-      // baseline position: approx
-      let yBase = yTop + size;
-
-      const segs = splitMathSegments(a.raw || "");
-      for (const seg of segs){
-        if (!seg.value) continue;
-
-        if (seg.type==="text"){
-          // handle newlines: split
-          const lines = seg.value.split("\n");
-          for (let li2=0; li2<lines.length; li2++){
-            const t = lines[li2];
-            if (t){
-              ctx.fillText(t, x, yBase);
-              x += ctx.measureText(t).width;
-            }
-            if (li2 < lines.length-1){
-              x = a.x;
-              yBase += size * 1.25;
-            }
-          }
-        } else {
-          const tex = seg.value.trim();
-          if (!tex) continue;
-
-          // display math: move to new line and center-ish from x=a.x
-          if (seg.display){
-            x = a.x;
-            yBase += size * 0.5;
-          }
-
-          const res = await texToSvgImage(tex, seg.display);
-          if (!res || !res.img) continue;
-
-          // scale SVG to roughly match font size.
-          // MathJax viewBox height is in "ex-like" units; we map to px empirically.
-          // A robust approach is to fit SVG height to ~1.05*size for inline math.
-          let targetH = seg.display ? size * 1.8 : size * 1.05;
-          const vbH = res.vbH || 100;
-          const scale = targetH / vbH;
-          const w = (res.vbW || 100) * scale;
-          const h = (res.vbH || 100) * scale;
-
-          // align inline math to baseline: put bottom at baseline (roughly)
-          const yDraw = seg.display ? (yBase - targetH*0.85) : (yBase - targetH*0.82);
-          ctx.drawImage(res.img, x, yDraw, w, h);
-
-          x += w + 1;
-          if (seg.display){
-            yBase += targetH * 0.95;
-          }
-        }
-      }
-    }
-  }
-}
-
-function drawBackgroundToCtx(ctx, mode, W, H){
-  if (mode==="transparent") return;
-
-  if (mode==="grid"){
-    ctx.save();
-    ctx.strokeStyle = "rgba(0,0,0,0.07)";
-    ctx.lineWidth = 1;
-    for (let x=0;x<W;x+=GRID_STEP){
-      ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke();
-    }
-    for (let y=0;y<H;y+=GRID_STEP){
-      ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
-    }
-    ctx.restore();
-    return;
-  }
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.13)";
-  for (let x=0;x<W;x+=GRID_STEP){
-    for (let y=0;y<H;y+=GRID_STEP){
-      ctx.beginPath();
-      ctx.arc(x,y,1.3,0,Math.PI*2);
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-}
-
-async function buildCompositeCanvas(includeBg){
-  const W = width;
-  const H = height;
-
-  const tmp = document.createElement("canvas");
-  tmp.width = W;
-  tmp.height = H;
-  const ctx = tmp.getContext("2d");
-
-  // white background for OneNote
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0,0,W,H);
-
-  if (includeBg) drawBackgroundToCtx(ctx, bgMode, W, H);
-
-  for (let i=0;i<3;i++){
-    if (!layers[i].visible) continue;
-    ctx.drawImage(layers[i].pg.elt, 0, 0, W, H);
-  }
-
-  await drawTextActionsToCtx(ctx);
-  return tmp;
-}
-
-async function exportPNGToClipboard(includeBg){
-  const tmp = await buildCompositeCanvas(includeBg);
-  const blob = await new Promise(res => tmp.toBlob(res, "image/png"));
-  if (!blob) throw new Error("PNG export failed");
-  await navigator.clipboard.write([ new ClipboardItem({ "image/png": blob }) ]);
-}
-
-async function exportPDF(includeBg){
-  const tmp = await buildCompositeCanvas(includeBg);
-  const dataUrl = tmp.toDataURL("image/png");
-
-  const { jsPDF } = window.jspdf;
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
-
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-
-  const imgW = tmp.width;
-  const imgH = tmp.height;
-  const scale = Math.min(pageW / imgW, pageH / imgH);
-  const w = imgW * scale;
-  const h = imgH * scale;
-  const x = (pageW - w) / 2;
-  const y = (pageH - h) / 2;
-
-  doc.addImage(dataUrl, "PNG", x, y, w, h, undefined, "FAST");
-  doc.save(`whiteboard_${PAGE_ID}.pdf`);
 }
 
 /* =====================
@@ -1850,39 +1238,42 @@ function pointerToCanvasXY(ev){
   return { x: ev.clientX-rect.left, y: ev.clientY-rect.top };
 }
 
+/* =====================
+   Start / extend / finish action
+   ===================== */
 function startAction(x,y,pressure,pointerType){
   closePopups();
   clearHoldAlignTimer();
-
-  // keep pen-stillness tracking
   lastSignificantMoveAt = performance.now();
   lastMovePos = {x,y};
 
   if (tool==="pointer") return;
 
   if (tool==="text"){
-    openTextEditor(x,y,"",defaultTextSize,null,activeLayer);
+    clearSelection();
+    openTextEditor(x,y,"",defaultTextSize,defaultTextStyle,null,activeLayer);
     return;
   }
 
   if (tool==="fill"){
+    clearSelection();
     pushUndo(activeLayer);
     const a = alphaFromTransp(transp);
     const ok = floodFillOnLayer(activeLayer, x, y, currentColor, a);
     if (ok){
       layers[activeLayer].actions.push({type:"fill", x, y, color: currentColor, alpha: a});
       rebuildTextOverlay();
-      scheduleSave();
     }
     return;
   }
 
   if (tool==="lasso"){
-    if (lasso.selectedIdx.length && lasso.obb){
-      const hh = hitHandleOBB(x,y);
-      if(hh==="rot"){ beginTransformMode("rotate", hh, x, y); return; }
-      if(["tl","tr","br","bl","tm","bm","lm","rm"].includes(hh)){ beginTransformMode("scale", hh, x, y); return; }
-      if(pointInOBB(x,y,lasso.obb)){ beginTransformMode("move", "move", x, y); return; }
+    // if clicked inside existing bbox -> move selection
+    if (lasso.selectedIdx.length && pointInBBox(x,y,lasso.bbox)){
+      pushUndo(activeLayer);
+      lasso.mode="move";
+      lasso.moveStart={x,y};
+      return;
     }
     clearSelection();
     lasso.selecting=true;
@@ -1891,50 +1282,34 @@ function startAction(x,y,pressure,pointerType){
   }
 
   if (tool==="laser"){
-    if (!laserInitialized){
-      // save pen state once
-      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
-
-      currentColor = "#39FF14";
-      colorChip.style.background = currentColor;
-      strokeWidth = 2;
-      strokeWidthSel.value = "2";
-      updateStrokeSelectLabel();
-      laserInitialized = true;
-    }
     const p0=snapPoint(x,y);
     laserTrail.push({x:p0.x,y:p0.y,t:millis()});
     current={type:"laser"};
     return;
   }
 
+  // other tools clear selection
+  clearSelection();
+
   const p0=snapPoint(x,y);
   const layerIndex=activeLayer;
 
-  // Highlighter is a straight line object
+  // Highlighter defaults (always): bright yellow + transp 7
   if (tool==="highlighter"){
-    if (!highlighterInitialized){
-      // save pen state once
-      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
-
-      highlighterWidth = 20;
-      highlighterTransp = 7;
-      highlighterInitialized = true;
-    }
-    strokeWidth = highlighterWidth;
-    transp = highlighterTransp;
-
+    strokeWidth = 20;
+    transp = 7;
     strokeWidthSel.value = String(strokeWidth);
     transpSel.value = String(transp);
     updateStrokeSelectLabel();
     updateTranspSelectLabel();
 
+    pushUndo(layerIndex);
     const alpha = alphaFromTransp(transp);
     current={ type:"line", style:{ eraser:false, weight:strokeWidth, color:"#FFFF00", alpha }, a:p0, b:p0, layer:layerIndex };
     return;
   }
 
-  // Pen / eraser: preview-only path (commit on finish)
+  // Pen / eraser
   if (tool==="pen" || tool==="eraser"){
     pushUndo(layerIndex);
     const style=makeStyleForCurrent(pressure,pointerType);
@@ -1954,28 +1329,24 @@ function startAction(x,y,pressure,pointerType){
 }
 
 function extendAction(x,y,pressure,pointerType){
-  // lasso transform (FIXED)
-  if (tool==="lasso" && lasso.mode!=="idle"){
-    if (lasso.mode==="move"){
+  if (tool==="lasso"){
+    if (lasso.mode==="move" && lasso.moveStart){
       const dx = x - lasso.moveStart.x;
       const dy = y - lasso.moveStart.y;
-      applyMove(dx,dy);
-      lasso.moveStart = {x,y};     // IMPORTANT FIX: update so reversing works
-      lasso.liveText=null;
-    } else if (lasso.mode==="rotate"){
-      applyRotateFromPointer(x,y);
-    } else if (lasso.mode==="scale"){
-      applyScaleFromPointer(x,y);
+      const L = layers[activeLayer];
+      for(const idx of lasso.selectedIdx) translateAction(L.actions[idx], dx, dy);
+      lasso.moveStart = {x,y};
+      recomputeSelectionBBox();
+      rebuildLayerBuffer(activeLayer);
+      rebuildTextOverlay();
+      return;
     }
-    rebuildLayerBuffer(activeLayer);
-    rebuildTextOverlay();
-    return;
-  }
-
-  if (tool==="lasso" && lasso.selecting){
-    const last=lasso.points[lasso.points.length-1];
-    if (dist(last.x,last.y,x,y)<2) return;
-    lasso.points.push({x,y});
+    if (lasso.selecting){
+      const last=lasso.points[lasso.points.length-1];
+      if (dist(last.x,last.y,x,y)<2) return;
+      lasso.points.push({x,y});
+      return;
+    }
     return;
   }
 
@@ -1992,7 +1363,6 @@ function extendAction(x,y,pressure,pointerType){
   const still = isStill(now, p.x, p.y);
   if (still && !holdAlignTimer) armHoldAlignTimer();
 
-  // shift aligns line/arrow while drawing
   if (current.type==="line" || current.type==="arrow"){
     current.b = p;
     if (isShiftDown){
@@ -2023,8 +1393,11 @@ function finishAction(){
   clearHoldAlignTimer();
 
   if (tool==="lasso"){
-    if (lasso.mode!=="idle"){
-      commitTransform();
+    if (lasso.mode==="move"){
+      lasso.mode="idle";
+      lasso.moveStart=null;
+      rebuildLayerBuffer(activeLayer);
+      rebuildTextOverlay();
       return;
     }
     if (lasso.selecting){
@@ -2036,20 +1409,16 @@ function finishAction(){
   }
 
   if (!current) return;
-
   if (current.type==="laser"){ current=null; return; }
 
   const L=layers[current.layer];
 
-  // Pen/eraser: commit to buffer now
   if (current.type==="path"){
-    // If it got converted into a line via holdAlignTimer, current.type would be "line"
     L.actions.push({ type:"path", style: current.style, points: current.points });
 
-    // draw it to the layer buffer
     const a = L.actions[L.actions.length-1];
     const pts=a.points;
-    for(let k=1;k<pts.length;k++){
+    for (let k=1;k<pts.length;k++){
       const p0=pts[k-1], p1=pts[k];
       const avgP=((p0.p??1)+(p1.p??1))/2;
       const mult=pressureMultiplier(avgP, "pen");
@@ -2069,7 +1438,6 @@ function finishAction(){
       }
     }
   } else {
-    // shapes/highlighter
     L.pg.push();
     drawShapeAction(current, L.pg);
     L.pg.pop();
@@ -2078,7 +1446,6 @@ function finishAction(){
 
   current=null;
   rebuildTextOverlay();
-  scheduleSave();
 }
 
 /* =====================
@@ -2135,7 +1502,6 @@ function onKeyDown(ev){
 
   const k = ev.key.toLowerCase();
 
-  // width shortcuts 1..9
   if (/^[1-9]$/.test(k)){
     const idx = parseInt(k,10) - 1;
     const vals=[1,2,3,4,5,8,10,20,30];
@@ -2144,7 +1510,8 @@ function onKeyDown(ev){
     lastNonEraserWidth = v;
     strokeWidthSel.value = String(v);
     updateStrokeSelectLabel();
-    scheduleSave();
+    // update penState for restore after laser/highlighter
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     return;
   }
 
@@ -2156,7 +1523,6 @@ function onKeyDown(ev){
   if (k==="t") setTool("text");
   if (k==="f") setTool("fill");
 
-  // cycle shapes with S + cursor hint
   if (k==="s"){
     shapeIndex = (shapeIndex + 1) % SHAPES.length;
     const sh = SHAPES[shapeIndex];
@@ -2165,28 +1531,14 @@ function onKeyDown(ev){
     showCursorHint(`Shapes: ${sh}`);
   }
 
-  // cycle background with G
   if (k==="g"){
     bgMode = (bgMode==="transparent") ? "dots" : (bgMode==="dots") ? "grid" : "transparent";
     bgModeSel.value = bgMode;
-    scheduleSave();
   }
 
-  // snap toggle N
   if (k==="n"){
     snapToGrid = !snapToGrid;
     snapEl.checked = snapToGrid;
-    scheduleSave();
-  }
-
-  // PNG clipboard X
-  if (k==="x"){
-    pngClipboardBtn.click();
-  }
-
-  // PDF export V
-  if (k==="v"){
-    pdfExportBtn.click();
   }
 
   if ((ev.ctrlKey||ev.metaKey) && k==="z"){
@@ -2204,9 +1556,9 @@ function onKeyDown(ev){
    UI
    ===================== */
 let ui, dragHandle;
-let btnCycle, glyphCycle, btnDark, glyphDark;
+let btnCycle, glyphCycle;
 
-let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolLassoBtn, toolTextBtn, toolFillBtn;
+let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn;
 let shapeToolSel;
 let bgModeSel, strokeWidthSel, smoothingSel, transpSel;
 let snapEl, undoBtn, clearBtn;
@@ -2214,7 +1566,7 @@ let snapEl, undoBtn, clearBtn;
 let colorSelect, palette, paletteGrid, colorChip;
 let layersSelect, layersMenu, layersLabel;
 
-let pngClipboardBtn, pdfExportBtn, exportBg, exportBg2;
+let collapseState = "partial";
 
 function initUI(){
   ui=document.getElementById("ui");
@@ -2222,9 +1574,6 @@ function initUI(){
 
   btnCycle=document.getElementById("btnCycle");
   glyphCycle=document.getElementById("glyphCycle");
-
-  btnDark=document.getElementById("btnDark");
-  glyphDark=document.getElementById("glyphDark");
 
   toolPenBtn=document.getElementById("toolPen");
   toolEraserBtn=document.getElementById("toolEraser");
@@ -2254,19 +1603,6 @@ function initUI(){
   undoBtn=document.getElementById("undo");
   clearBtn=document.getElementById("clear");
 
-  pngClipboardBtn=document.getElementById("pngClipboardBtn");
-  pdfExportBtn=document.getElementById("pdfExportBtn");
-  exportBg=document.getElementById("exportBg");
-  exportBg2=document.getElementById("exportBg2");
-
-  // sync checkboxes
-  function syncBgCheckbox(v){
-    exportBg.checked = v;
-    exportBg2.checked = v;
-  }
-  exportBg.addEventListener("change",()=>syncBgCheckbox(exportBg.checked));
-  exportBg2.addEventListener("change",()=>syncBgCheckbox(exportBg2.checked));
-
   // palette
   paletteGrid.innerHTML="";
   COLORS.forEach(hex=>{
@@ -2278,7 +1614,8 @@ function initUI(){
       currentColor=hex;
       colorChip.style.background=hex;
       palette.classList.remove("open");
-      scheduleSave();
+      // update penState so returning from laser/highlighter respects latest color
+      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     });
     paletteGrid.appendChild(sw);
   });
@@ -2305,7 +1642,6 @@ function initUI(){
     ev.stopPropagation();
     collapseState = (collapseState==="full") ? "partial" : (collapseState==="partial") ? "expanded" : "full";
     applyCollapseState();
-    scheduleSave();
   });
   function updateCycleGlyph(){
     glyphCycle.textContent = (collapseState==="expanded") ? "▴" : "▾";
@@ -2318,15 +1654,6 @@ function initUI(){
     updateCycleGlyph();
   }
   window.applyCollapseState = applyCollapseState;
-  window.updateCycleGlyph = updateCycleGlyph;
-
-  btnDark.addEventListener("click",(ev)=>{
-    ev.stopPropagation();
-    darkMode = !darkMode;
-    document.body.classList.toggle("dark", darkMode);
-    glyphDark.textContent = darkMode ? "🔆" : "🌙";
-    scheduleSave();
-  });
 
   // tools
   toolPenBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("pen"); });
@@ -2340,14 +1667,14 @@ function initUI(){
   shapeToolSel.addEventListener("input",()=> setTool(shapeToolSel.value));
   shapeToolSel.addEventListener("change",()=> setTool(shapeToolSel.value));
 
-  bgModeSel.addEventListener("change",()=>{ bgMode=bgModeSel.value; scheduleSave(); });
+  bgModeSel.addEventListener("change",()=>{ bgMode=bgModeSel.value; });
 
   buildStrokeSelect();
   buildSmoothingSelect();
   buildTranspSelect();
 
   snapEl.checked=snapToGrid;
-  snapEl.addEventListener("change",()=>{ snapToGrid=snapEl.checked; scheduleSave(); });
+  snapEl.addEventListener("change",()=>{ snapToGrid=snapEl.checked; });
 
   undoBtn.addEventListener("click",()=>{ clearSelection(); undoActiveLayer(); });
   clearBtn.addEventListener("click",()=>{
@@ -2356,34 +1683,12 @@ function initUI(){
     layers[activeLayer].actions = [];
     rebuildLayerBuffer(activeLayer);
     rebuildTextOverlay();
-    scheduleSave();
-  });
-
-  pngClipboardBtn.addEventListener("click", async (ev)=>{
-    if (ev.target && (ev.target.id === "exportBg" || ev.target.id === "exportBg2")) return;
-    try{
-      await exportPNGToClipboard(exportBg.checked);
-      showToast("Copied to clipboard");
-    }catch(e){
-      alert("Clipboard export blocked (use screenshot / not supported when embedded).");
-    }
-  });
-
-  pdfExportBtn.addEventListener("click", async (ev)=>{
-    if (ev.target && (ev.target.id === "exportBg" || ev.target.id === "exportBg2")) return;
-    try{
-      await exportPDF(exportBg.checked);
-    }catch(e){
-      alert("PDF export blocked (not supported when embedded).");
-    }
   });
 
   rebuildLayersMenu();
   updateLayersLabel();
 
   applyCollapseState();
-  glyphDark.textContent = darkMode ? "🔆" : "🌙";
-
   initDrag();
 
   document.getElementById("btnShortcuts").addEventListener("click",(e)=>e.preventDefault());
@@ -2404,12 +1709,12 @@ function buildStrokeSelect(){
     strokeWidth=parseInt(strokeWidthSel.value,10);
     if(tool!=="eraser") lastNonEraserWidth=strokeWidth;
     updateStrokeSelectLabel();
-    scheduleSave();
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
   });
 }
 function updateStrokeSelectLabel(){
   const opt = strokeWidthSel.options[strokeWidthSel.selectedIndex];
-  opt.textContent = `↕ ${strokeWidthSel.value} pt`;
+  opt.textContent = `↕ Width ${strokeWidthSel.value} pt`;
   for (const o of strokeWidthSel.options){
     if (o !== opt) o.textContent = `${o.value} pt`;
   }
@@ -2427,12 +1732,12 @@ function buildSmoothingSelect(){
   smoothingSel.addEventListener("change",()=>{
     smoothing=parseInt(smoothingSel.value,10);
     updateSmoothingSelectLabel();
-    scheduleSave();
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
   });
 }
 function updateSmoothingSelectLabel(){
   const opt = smoothingSel.options[smoothingSel.selectedIndex];
-  opt.textContent = `≈ ${smoothingSel.value}/10`;
+  opt.textContent = `≈ Smooth. ${smoothingSel.value}/10`;
   for (const o of smoothingSel.options){
     if (o !== opt) o.textContent = `${o.value}`;
   }
@@ -2450,12 +1755,12 @@ function buildTranspSelect(){
   transpSel.addEventListener("change",()=>{
     transp=parseInt(transpSel.value,10);
     updateTranspSelectLabel();
-    scheduleSave();
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
   });
 }
 function updateTranspSelectLabel(){
   const opt = transpSel.options[transpSel.selectedIndex];
-  opt.textContent = `◌ ${transpSel.value}/10`;
+  opt.textContent = `◌ Transp. ${transpSel.value}/10`;
   for (const o of transpSel.options){
     if (o !== opt) o.textContent = `${o.value}`;
   }
@@ -2466,12 +1771,19 @@ function setTool(t){
   if (textEditor.style.display!=="none") commitTextEdit();
   clearHoldAlignTimer();
 
-  // reset to pen state when returning from highlighter or laser -> pen
-  if (t==="pen" && (tool==="highlighter" || tool==="laser")){
+  const isGoingToSpecial = (t==="highlighter" || t==="laser");
+  if (isGoingToSpecial){
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+  }
+
+  const isPenOrShape = (t==="pen" || ["line","arrow","circle","rect","ellipse"].includes(t));
+  const fromSpecial = (tool==="highlighter" || tool==="laser");
+  if (isPenOrShape && fromSpecial){
     currentColor = penState.color;
     strokeWidth  = penState.width;
     transp       = penState.transp;
     smoothing    = penState.smoothing;
+
     colorChip.style.background = currentColor;
     strokeWidthSel.value = String(strokeWidth);
     smoothingSel.value = String(smoothing);
@@ -2492,10 +1804,34 @@ function setTool(t){
   toolLaserBtn.classList.toggle("active", tool==="laser");
   toolLassoBtn.classList.toggle("active", tool==="lasso");
 
+  // Laser defaults: red + transp 1 + width 2
+  if (tool==="laser"){
+    currentColor = "#D7263D";
+    transp = 1;
+    strokeWidth = 2;
+
+    colorChip.style.background = currentColor;
+    transpSel.value = String(transp);
+    strokeWidthSel.value = String(strokeWidth);
+
+    updateTranspSelectLabel();
+    updateStrokeSelectLabel();
+  }
+
+  // Highlighter defaults shown in dropdowns
+  if (tool==="highlighter"){
+    strokeWidth = 20;
+    transp = 7;
+    strokeWidthSel.value = String(strokeWidth);
+    transpSel.value = String(transp);
+    updateStrokeSelectLabel();
+    updateTranspSelectLabel();
+  }
+
   if (tool==="eraser"){
     lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
     strokeWidth=10;
-  } else {
+  } else if (tool!=="highlighter" && tool!=="laser") {
     strokeWidth=lastNonEraserWidth ?? strokeWidth ?? 2;
   }
 
@@ -2509,14 +1845,7 @@ function setTool(t){
   const boxes = textOverlay.querySelectorAll(".text-box");
   boxes.forEach(b=> b.style.pointerEvents = (tool==="text") ? "auto" : "none");
 
-  if (tool!=="lasso") {
-    lasso.mode="idle";
-    lasso.selecting=false;
-    lasso.liveText=null;
-  }
-
   rebuildTextOverlay();
-  scheduleSave();
 }
 
 /* draggable toolbar */
@@ -2552,7 +1881,7 @@ function initDrag(){
 /* layers menu */
 function rebuildLayersMenu(){
   layersMenu.innerHTML="";
-  for(let i=0;i<3;i++){
+  for (let i=0;i<3;i++){
     const item=document.createElement("div");
     item.className="layer-item" + (layers[i].visible ? "" : " invisible");
 
@@ -2593,7 +1922,6 @@ function rebuildLayersMenu(){
       layersMenu.classList.remove("open");
       rebuildAllBuffers();
       rebuildTextOverlay();
-      scheduleSave();
     });
 
     layersMenu.appendChild(item);
@@ -2602,76 +1930,6 @@ function rebuildLayersMenu(){
 function updateLayersLabel(){
   const vis = layers[activeLayer]?.visible ? "on" : "off";
   layersLabel.textContent = `🧱  Layers (${activeLayer+1}:${vis})`;
-}
-
-/* =====================
-   Storage
-   ===================== */
-function saveToLocalStorage(){
-  try{
-    const payload={
-      version:"29",
-      page:PAGE_ID,
-      bgMode, snapToGrid, strokeWidth, smoothing, transp, currentColor,
-      defaultTextSize,
-      activeLayer, collapseState,
-      darkMode,
-      highlighterInitialized, highlighterWidth, highlighterTransp,
-      laserInitialized,
-      penState,
-      layers: layers.map(L=>({visible:L.visible, actions:L.actions}))
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }catch(e){}
-}
-function loadFromLocalStorage(){
-  try{
-    const raw=localStorage.getItem(STORAGE_KEY);
-    if(!raw) return;
-    const data=JSON.parse(raw);
-    if(!data || data.version!=="29") return;
-
-    if(typeof data.bgMode==="string") bgMode=data.bgMode;
-    if(typeof data.snapToGrid==="boolean") snapToGrid=data.snapToGrid;
-    if(typeof data.strokeWidth==="number") strokeWidth=data.strokeWidth;
-    if(typeof data.smoothing==="number") smoothing=data.smoothing;
-    if(typeof data.transp==="number") transp=data.transp;
-    if(typeof data.currentColor==="string") currentColor=data.currentColor;
-
-    if(typeof data.defaultTextSize==="number") defaultTextSize=data.defaultTextSize;
-    if(typeof data.activeLayer==="number") activeLayer=clamp(data.activeLayer,0,2);
-    if(typeof data.collapseState==="string") collapseState=data.collapseState;
-
-    if(typeof data.darkMode==="boolean") darkMode=data.darkMode;
-
-    if(typeof data.highlighterInitialized==="boolean") highlighterInitialized=data.highlighterInitialized;
-    if(typeof data.highlighterWidth==="number") highlighterWidth=data.highlighterWidth;
-    if(typeof data.highlighterTransp==="number") highlighterTransp=data.highlighterTransp;
-    if(typeof data.laserInitialized==="boolean") laserInitialized=data.laserInitialized;
-
-    if (data.penState && typeof data.penState==="object") penState = data.penState;
-
-    if(Array.isArray(data.layers)){
-      for(let i=0;i<3;i++){
-        if(!data.layers[i]) continue;
-        if(typeof data.layers[i].visible==="boolean") layers[i].visible=data.layers[i].visible;
-        if(Array.isArray(data.layers[i].actions)) layers[i].actions=data.layers[i].actions;
-      }
-    }
-
-    bgModeSel.value=bgMode;
-    snapEl.checked=snapToGrid;
-    colorChip.style.background=currentColor;
-    textSizeEditor.value = String(defaultTextSize);
-
-    document.body.classList.toggle("dark", darkMode);
-    glyphDark.textContent = darkMode ? "🔆" : "🌙";
-
-    rebuildLayersMenu();
-    updateLayersLabel();
-
-    setTool("pointer");
-  }catch(e){}
 }
 </script>
 </body>
