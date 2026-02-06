@@ -87,9 +87,11 @@
     WB.drawing.setupP5();
 
     WB.storage.loadNow();
+    WB.storage.applyLoadedLayersIfAny?.();
 
     WB.drawing.rebuildAllBuffers();
     WB.text.rebuildTextOverlay();
+    WB.drawing.setTool("pointer");
 
     // start with pointer tool (no tool)
     WB.drawing.setTool("pointer");
