@@ -1940,6 +1940,25 @@ function initUI(){
     });
   }
 
+  // ALSO switch tool when opening/clicking the shapes dropdown,
+  // because "change" won't fire if Arrow is already selected.
+  const ensureShapeToolActive = () => {
+    const v = shapeToolSel.value;
+    if (!v) return;
+    // if we're currently NOT on a shape tool, activate the selected shape immediately
+    if (!["line","arrow","circle","rect","ellipse"].includes(tool)) {
+      shapeIndex = Math.max(0, SHAPES.indexOf(v));
+      setTool(v);
+      showCursorHint(`Shapes: ${v}`);
+    }
+  };
+
+  // Works on tablets (pointer) and desktop (mouse)
+  shapeToolSel.addEventListener("pointerdown", ensureShapeToolActive);
+  shapeToolSel.addEventListener("mousedown", ensureShapeToolActive);
+  shapeToolSel.addEventListener("touchstart", ensureShapeToolActive, {passive:true});
+
+
   bgModeSel.addEventListener("change",()=>{ bgMode=bgModeSel.value; saveToStorage(slideKey); });
 
   buildStrokeSelect();
