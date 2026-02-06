@@ -2,8 +2,11 @@ window.WB = window.WB || {};
 
 WB.ui = {
   init(){
+    // ✅ HARD GUARD: WB.state must exist (Slides/iframes can re-run scripts oddly)
+    window.WB = window.WB || {};
+    WB.state = WB.state || {};
     const S = WB.state;
-    const U = (S.ui = {});
+    const U = (S.ui = S.ui || {});
 
     U.root = document.getElementById("ui");
     U.dragHandle = document.getElementById("dragHandle");
