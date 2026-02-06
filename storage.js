@@ -1,114 +1,154 @@
 window.WB = window.WB || {};
 
 WB.storage = {
-  isEmbedded(){
-    try { return window.top !== window.self; } catch(_) { return true; }
-  },
-
-  hashStr(str){
-    let h = 5381;
-    for (let i = 0; i < str.length; i++){
-      h = ((h << 5) + h) ^ str.charCodeAt(i);
-    }
-    return (h >>> 0).toString(36);
-  },
-
-  explicitPageId(){
+  hasExplicitPage(){
     const params = new URLSearchParams(location.search);
-    const q = params.get("page") || params.get("p");
-    if (q) return q;
-    if (location.hash && location.hash.length > 1) return location.hash.slice(1);
-    return "";
+    if (params.has("page") || params.has("p")) return true;
+    if (location.hash && location.hash.length > 1) return true;
+    return false;
   },
 
-  referrerPageId(){
-    if (!WB.storage.isEmbedded()) return "";
-    const ref = (document.referrer || "").trim();
-    if (!ref) return "";
-    return "ref_" + WB.storage.hashStr(ref);
-  },
-
-  baseKeyPrefix(){
-    // bump version so we don't collide with older experiments
-    return `p5_whiteboard_split_v3::${location.origin}${location.pathname}`;
-  },
-
-  keyForPageId(pid){
-    return `${WB.storage.baseKeyPrefix()}::page=${pid}`;
-  },
-
-  // The pageId we *prefer* for UI/logging
   pageId(){
-    return WB.storage.explicitPageId() || WB.storage.referrerPageId() || "default";
+    const params = new URLSearchParams(location.search);
+    return params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
   },
 
-  // All candidate page IDs we should save/load under
-  candidatePageIds(){
-    const a = [];
-    const exp = WB.storage.explicitPageId();
-    const ref = WB.storage.referrerPageId();
-    if (exp) a.push(exp);
-    if (ref && ref !== exp) a.push(ref);
-    if (!a.length) a.push("default");
-    return a;
+  sessionIdIfNeeded(){
+    // ONLY create per-tab ID if there is NO explicit page id
+    if (WB.storage.hasExplicitPage()) return null;
+
+    let sid = sessionStorage.getItem("wb_session_id");
+    if (!sid){
+      sid = String(Date.now()) + "_" + Math.random().toString(16).slice(2);
+      sessionStorage.setItem("wb_session_id", sid);
+    }
+    return sid;
   },
 
-  // Backward compatibility: your old split_v1 key (if present)
-  legacyKeySplitV1(){
-    const pid = WB.storage.pageId();
+  key(){
     const base = `p5_whiteboard_split_v1::${location.origin}${location.pathname}`;
-    return `${base}::page=${pid}`;
+    const pid  = `page=${WB.storage.pageId()}`;
+    const sid  = WB.storage.sessionIdIfNeeded();
+    return sid ? `${base}::${sid}::${pid}` : `${base}::${pid}`;
   },
 
   _timer: null,
+  _loadedSnapshot: null,
 
   scheduleSave(){
     if (WB.storage._timer) clearTimeout(WB.storage._timer);
     WB.storage._timer = setTimeout(() => WB.storage.saveNow(), 180);
   },
 
-  saveNow(){
+  // ---- serialize only JSON-safe snapshot ----
+  _makeSnapshot(){
     const S = WB.state;
-    try{
-      const payload = {
-        version: "split_v3",
-        page: WB.storage.pageId(),
-        state: S
-      };
 
-      // Save under all plausible keys so slides.com URL changes won't lose it
-      for (const pid of WB.storage.candidatePageIds()){
-        localStorage.setItem(WB.storage.keyForPageId(pid), JSON.stringify(payload));
-      }
-    } catch(e) {
-      // ignore (some embedded contexts can block storage)
-      // console.warn("saveNow failed", e);
+    const safeLayers = (S.layers || []).map(L => ({
+      visible: !!L.visible,
+      actions: Array.isArray(L.actions) ? L.actions : []
+    }));
+
+    return {
+      version: "split_v1",
+      page: WB.storage.pageId(),
+      t: Date.now(),
+
+      // UI/interaction-independent settings (keep minimal & JSON-safe)
+      settings: {
+        tool: S.tool || "pointer",
+        strokeWidth: S.strokeWidth ?? 2,
+        smoothing: S.smoothing ?? 2,
+        transp: S.transp ?? 1,
+        currentColor: S.currentColor || (WB.CONFIG?.COLORS?.[0] || "#000000"),
+
+        snapToGrid: !!S.snapToGrid,
+        bgMode: S.bgMode || "transparent",
+
+        collapseState: S.collapseState || "partial",
+        darkMode: !!S.darkMode,
+
+        activeLayer: S.activeLayer ?? 0,
+
+        // memory features
+        penState: S.penState || null,
+        highlighterInitialized: !!S.highlighterInitialized,
+        highlighterWidth: S.highlighterWidth ?? 20,
+        highlighterTransp: S.highlighterTransp ?? 7,
+        laserInitialized: !!S.laserInitialized
+      },
+
+      layers: safeLayers
+    };
+  },
+
+  saveNow(){
+    try{
+      const snap = WB.storage._makeSnapshot();
+      localStorage.setItem(WB.storage.key(), JSON.stringify(snap));
+    } catch(e){
+      // If this happens, you WANT to see it during dev:
+      console.warn("[storage] saveNow failed:", e);
     }
   },
 
+  // load JSON-safe snapshot into memory; applying to p5 layers happens after setupP5()
   loadNow(){
     try{
-      // Try new keys first
-      for (const pid of WB.storage.candidatePageIds()){
-        const raw = localStorage.getItem(WB.storage.keyForPageId(pid));
-        if (!raw) continue;
-        const data = JSON.parse(raw);
-        if (!data || !data.state) continue;
-        WB.state = Object.assign(WB.state, data.state);
-        return;
-      }
+      const raw = localStorage.getItem(WB.storage.key());
+      if (!raw) return;
 
-      // Fallback: legacy split_v1 key (older versions)
-      const legacy = localStorage.getItem(WB.storage.legacyKeySplitV1());
-      if (legacy){
-        const data = JSON.parse(legacy);
-        if (data && data.state){
-          WB.state = Object.assign(WB.state, data.state);
-          return;
-        }
-      }
-    } catch(e) {
-      // ignore
+      const data = JSON.parse(raw);
+      if (!data || data.version !== "split_v1") return;
+
+      WB.storage._loadedSnapshot = data;
+
+      // Apply settings immediately (these are JSON-safe)
+      const S = WB.state;
+      const st = data.settings || {};
+
+      S.tool = st.tool ?? S.tool;
+
+      S.strokeWidth = st.strokeWidth ?? S.strokeWidth;
+      S.smoothing   = st.smoothing   ?? S.smoothing;
+      S.transp      = st.transp      ?? S.transp;
+      S.currentColor = st.currentColor ?? S.currentColor;
+
+      S.snapToGrid = !!st.snapToGrid;
+      S.bgMode     = st.bgMode ?? S.bgMode;
+
+      S.collapseState = st.collapseState ?? S.collapseState;
+      S.darkMode      = !!st.darkMode;
+
+      S.activeLayer = st.activeLayer ?? S.activeLayer;
+
+      S.penState = st.penState ?? S.penState;
+      S.highlighterInitialized = !!st.highlighterInitialized;
+      S.highlighterWidth  = st.highlighterWidth ?? S.highlighterWidth;
+      S.highlighterTransp = st.highlighterTransp ?? S.highlighterTransp;
+      S.laserInitialized  = !!st.laserInitialized;
+    } catch(e){
+      console.warn("[storage] loadNow failed:", e);
     }
+  },
+
+  // Call this AFTER WB.drawing.setupP5() created fresh p5.Graphics layers
+  applyLoadedToRuntime(){
+    const snap = WB.storage._loadedSnapshot;
+    if (!snap || !snap.layers) return;
+
+    const S = WB.state;
+    for (let i = 0; i < 3; i++){
+      const L = S.layers[i];
+      const src = snap.layers[i];
+      if (!L || !src) continue;
+
+      L.visible = !!src.visible;
+      L.actions = Array.isArray(src.actions) ? src.actions : [];
+    }
+
+    // Now rebuild buffers based on restored actions
+    try { WB.drawing.rebuildAllBuffers(); } catch(_) {}
+    try { WB.text.rebuildTextOverlay(); } catch(_) {}
   }
 };
