@@ -73,8 +73,11 @@
       color:var(--text);
       font-family: var(--font);
       cursor: default;
+      user-select:none;
+      touch-action:none;
     }
-    .text-box.draggable{ cursor: move; }
+    .text-box.draggable{ cursor: grab; }
+    .text-box.dragging{ cursor: grabbing; }
 
     #cursorHint{
       position:fixed; z-index:999999;
@@ -102,6 +105,7 @@
       width:146px;
       max-width: calc(100vw - 20px); box-sizing:border-box;
     }
+    /* full = only the handle stays visible */
     #ui.partial .advanced{ display:none !important; }
     #ui.full .core, #ui.full .advanced{ display:none !important; }
 
@@ -109,7 +113,8 @@
 
     #dragHandle{
       display:flex; align-items:center; justify-content:space-between; gap:6px;
-      padding:6px 8px; border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,0.88);
+      padding:6px 6px; /* slightly tighter */
+      border:1px solid var(--border); border-radius:10px; background:rgba(255,255,255,0.88);
       cursor:grab; touch-action:none;
     }
     #dragHandle:active{ cursor:grabbing; }
@@ -119,9 +124,9 @@
 
     .handleBtns{
       display:flex;
-      gap:4px;              
+      gap:4px; /* tighter so buttons don't touch container edge */
       align-items:center;
-      padding-right:3px;
+      padding-right:2px; /* tiny breathing room */
     }
 
     .miniBtn{
@@ -137,7 +142,7 @@
       border:1px solid var(--border);
       border-radius:12px; box-shadow:var(--shadow);
       padding:10px 10px;
-      width:260px;
+      width:270px;
       display:none;
       z-index:99999;
       color:rgba(0,0,0,0.86);
@@ -271,8 +276,7 @@
 </head>
 
 <body>
-  <!-- start fully collapsed -->
-  <div id="ui" class="full">
+  <div id="ui" class="partial">
     <div id="dragHandle" title="Drag toolbar">
       <div class="dots" aria-hidden="true">
         <span></span><span></span><span></span>
@@ -280,8 +284,8 @@
       </div>
 
       <div class="handleBtns">
-        <!-- NEW pointer mini button -->
-        <button id="btnPointer" class="miniBtn" title="Pointer (Esc)">🖱️</button>
+        <!-- NEW: Pointer button (tablet friendly) -->
+        <button id="btnPointer" class="miniBtn" title="Pointer (Esc)">↖</button>
 
         <div class="shortcutWrap">
           <button id="btnShortcuts" class="miniBtn" title="Shortcuts">⌨</button>
@@ -293,12 +297,12 @@
             <div class="row"><span><code>H</code></span><span>Highlighter</span></div>
             <div class="row"><span><code>S</code></span><span>Cycle Shapes</span></div>
             <div class="row"><span><code>G</code></span><span>Cycle Grid</span></div>
+            <div class="row"><span><code>V</code></span><span>Next Layer</span></div>
             <div class="row"><span><code>N</code></span><span>Snap on/off</span></div>
             <div class="row"><span><code>F</code></span><span>Fill</span></div>
             <div class="row"><span><code>T</code></span><span>Text</span></div>
             <div class="row"><span><code>L</code></span><span>Lasso</span></div>
             <div class="row"><span><code>R</code></span><span>Laser</span></div>
-            <div class="row"><span><code>V</code></span><span>Next layer</span></div>
             <div class="row"><span><code>Shift</code></span><span>Align line/arrow</span></div>
             <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
             <div class="row"><span><code>Ctrl+D</code></span><span>Clear</span></div>
@@ -317,13 +321,13 @@
       <button class="tool" id="toolEraser" title="Eraser (E)"><span class="ico">🧽</span><span>Eraser</span></button>
       <button class="tool" id="toolHighlighter" title="Highlighter (H)"><span class="ico">🖍️</span><span>Highlighter</span></button>
 
-      <!-- Shapes dropdown (Arrow preselected). S still cycles. -->
-      <select id="shapeSel" title="Shapes (S cycles)">
-        <option value="line">— Line</option>
-        <option value="arrow" selected>→ Arrow</option>
-        <option value="circle">◯ Circle</option>
-        <option value="rect">▭ Rectangle</option>
-        <option value="ellipse">⬭ Ellipse</option>
+      <!-- Shapes dropdown (kept), default Arrow selected -->
+      <select id="shapeTool" title="Shapes (S)">
+        <option value="line">—  Line</option>
+        <option value="arrow" selected>→  Arrow</option>
+        <option value="circle">◯  Circle</option>
+        <option value="rect">▭  Rect</option>
+        <option value="ellipse">⬭  Ellipse (e=0.9)</option>
       </select>
 
       <div class="color-select" id="colorSelect" title="Color">
@@ -435,7 +439,7 @@ const COLORS = [
 /* =====================
    Persistence (per slide)
    ===================== */
-const STORAGE_PREFIX = "p5wb:v2:"; // bump if you change schema
+const STORAGE_PREFIX = "p5wb:v2:";
 let slideKey = "";
 let lastSlideKey = "";
 
@@ -517,6 +521,7 @@ function loadFromStorage(forKey){
   return importState(state);
 }
 
+// Optional postMessage wiring
 window.addEventListener("message", (ev)=>{
   const d = ev.data;
   if (!d || typeof d !== "object") return;
@@ -547,6 +552,9 @@ window.addEventListener("message", (ev)=>{
   }
 });
 
+/* =====================
+   Global state
+   ===================== */
 let tool = "pointer";
 let strokeWidth = 2;
 let smoothing = 2;
@@ -566,12 +574,11 @@ const textOverlay = document.getElementById("text-overlay");
 const cursorHint = document.getElementById("cursorHint");
 let lastPointerClient = {x: 0, y: 0};
 
-// Remember pen/shape settings across special tools
+// restore user pen/shapes values after highlighter/laser
 let penState = { color: currentColor, width: strokeWidth, transp, smoothing };
 
-// Laser state: defaults first use, then user-modifiable
+// laser defaults once, then user may change & it persists while switching tools
 let laserState = { color:"#D7263D", width:2, transp:7, smoothing:2 };
-let laserEverUsed = false;
 
 // text tool
 let defaultTextSize = 20;
@@ -582,8 +589,8 @@ const textSizeEditor = document.getElementById("textSizeEditor");
 const textStyleEditor = document.getElementById("textStyleEditor");
 let textDraft = null;
 
-// Text dragging (pointer tool)
-let draggingText = null;
+// text dragging
+let textDrag = { active:false, layer:0, index:0, dx:0, dy:0 };
 
 // Hold alignment timers
 let holdAlignTimer = null;
@@ -592,7 +599,7 @@ let lastMovePos = {x:0,y:0};
 
 // Shapes cycling (S)
 const SHAPES = ["line","arrow","circle","rect","ellipse"];
-let shapeIndex = 1; // default to arrow
+let shapeIndex = 1; // default arrow
 
 // Layers (3)
 let layers = [];
@@ -812,11 +819,13 @@ function setup(){
 
   initUI();
 
+  // load saved drawing for this slide (if any)
   loadFromStorage(slideKey);
 
   rebuildAllBuffers();
   rebuildTextOverlay();
 
+  // poll for slide changes
   setInterval(()=>{
     const k = getSlideKeyFromURL();
     if (k && k !== lastSlideKey){
@@ -843,6 +852,11 @@ function setup(){
   canvasEl.addEventListener("pointermove", onPointerMove, {passive:false});
   canvasEl.addEventListener("pointerup", onPointerUp, {passive:false});
   canvasEl.addEventListener("pointercancel", onPointerUp, {passive:false});
+
+  // global move/up for text dragging
+  document.addEventListener("pointermove", onDocPointerMove, {passive:false});
+  document.addEventListener("pointerup", onDocPointerUp, {passive:false});
+  document.addEventListener("pointercancel", onDocPointerUp, {passive:false});
 
   document.addEventListener("pointerdown",(ev)=>{
     if (textEditor.style.display==="none") return;
@@ -1172,7 +1186,7 @@ function drawLassoOverlay(){
 }
 
 /* =====================
-   Line/arrow alignment (kept)
+   Line/arrow alignment
    ===================== */
 function maybeAlignLineLike(a){
   if (!a || !(a.type==="line" || a.type==="arrow")) return;
@@ -1193,6 +1207,14 @@ function armHoldAlignTimer(){
       maybeAlignLineLike(current);
       return;
     }
+
+    if (current.type==="path" && tool==="pen"){
+      const lineObj = maybeConvertPathToAxisLine(current);
+      if (lineObj){
+        current = lineObj;
+        maybeAlignLineLike(current);
+      }
+    }
   }, HOLD_ALIGN_MS);
 }
 function isStill(now, x, y){
@@ -1204,6 +1226,39 @@ function isStill(now, x, y){
     return false;
   }
   return (now - lastSignificantMoveAt) > STILL_TIME_MS;
+}
+function pointLineDist(px,py, ax,ay, bx,by){
+  const vx=bx-ax, vy=by-ay;
+  const wx=px-ax, wy=py-ay;
+  const c1 = vx*wx + vy*wy;
+  const c2 = vx*vx + vy*vy || 1e-9;
+  const t = c1 / c2;
+  const projx = ax + t*vx;
+  const projy = ay + t*vy;
+  return Math.hypot(px-projx, py-projy);
+}
+function maybeConvertPathToAxisLine(pathAction){
+  const pts = pathAction.points || [];
+  if (pts.length < 3) return null;
+  const a0 = pts[0];
+  const a1 = pts[pts.length-1];
+  const len = Math.hypot(a1.x-a0.x, a1.y-a0.y);
+  if (len < FREE_LINE_MIN_LENGTH) return null;
+
+  let maxD = 0;
+  for (const p of pts){
+    maxD = Math.max(maxD, pointLineDist(p.x,p.y,a0.x,a0.y,a1.x,a1.y));
+    if (maxD > FREE_LINE_MAX_DEVIATION) return null;
+  }
+
+  const st = {
+    eraser:false,
+    weight: pathAction.style.baseWeight || strokeWidth,
+    color: pathAction.style.color || currentColor,
+    alpha: pathAction.style.alpha ?? alphaFromTransp(transp)
+  };
+
+  return { type:"line", style: st, a:{x:a0.x,y:a0.y}, b:{x:a1.x,y:a1.y}, layer: pathAction.layer };
 }
 
 /* =====================
@@ -1242,86 +1297,36 @@ function rebuildTextOverlay(){
       div.style.top  = a.y + "px";
       div.style.fontSize = (a.size || 20) + "px";
 
+      const isEditable = (tool==="text");
+      const isDraggable = (tool==="pointer");
+      div.style.pointerEvents = (isEditable || isDraggable) ? "auto" : "none";
+      div.classList.toggle("draggable", isDraggable);
+
       applyTextStyleToNode(div, a.style || "regular");
       div.textContent = a.raw;
 
       div.dataset.layer = String(li);
       div.dataset.index = String(i);
 
-      // Text edit (text tool)
       div.addEventListener("pointerdown",(ev)=>{
         if (tool==="text"){
           ev.stopPropagation();
-          ev.preventDefault();
           openTextEditor(a.x, a.y, a.raw, a.size, a.style, i, li);
+          return;
         }
-      });
-
-      // Text drag (pointer tool)
-      div.addEventListener("pointerdown",(ev)=>{
-        if (tool!=="pointer") return;
-        // only left button / primary
-        if (ev.button != null && ev.button !== 0) return;
-
-        ev.stopPropagation();
-        ev.preventDefault();
-
-        const act = layers[li].actions[i];
-        if (!act || act.type!=="text") return;
-
-        div.classList.add("draggable");
-        draggingText = {
-          layer: li,
-          index: i,
-          startClientX: ev.clientX,
-          startClientY: ev.clientY,
-          startX: act.x,
-          startY: act.y,
-          pointerId: ev.pointerId
-        };
-        div.setPointerCapture(ev.pointerId);
-      });
-
-      div.addEventListener("pointermove",(ev)=>{
-        if (!draggingText) return;
-        if (draggingText.pointerId !== ev.pointerId) return;
-        const act = layers[draggingText.layer].actions[draggingText.index];
-        if (!act || act.type!=="text") return;
-
-        ev.stopPropagation();
-        ev.preventDefault();
-
-        const dx = ev.clientX - draggingText.startClientX;
-        const dy = ev.clientY - draggingText.startClientY;
-
-        act.x = draggingText.startX + dx;
-        act.y = draggingText.startY + dy;
-
-        div.style.left = act.x + "px";
-        div.style.top  = act.y + "px";
-      });
-
-      div.addEventListener("pointerup",(ev)=>{
-        if (!draggingText) return;
-        if (draggingText.pointerId !== ev.pointerId) return;
-
-        ev.stopPropagation();
-        ev.preventDefault();
-
-        // update w/h from DOM
-        const act = layers[draggingText.layer].actions[draggingText.index];
-        if (act && act.type==="text"){
-          act.w = div.offsetWidth;
-          act.h = div.offsetHeight;
-          saveToStorage(slideKey);
+        if (tool==="pointer"){
+          // start drag
+          ev.preventDefault();
+          ev.stopPropagation();
+          const rect = div.getBoundingClientRect();
+          textDrag.active = true;
+          textDrag.layer = li;
+          textDrag.index = i;
+          textDrag.dx = ev.clientX - rect.left;
+          textDrag.dy = ev.clientY - rect.top;
+          div.classList.add("dragging");
+          div.setPointerCapture(ev.pointerId);
         }
-        draggingText = null;
-      });
-
-      div.addEventListener("pointercancel",(ev)=>{
-        if (!draggingText) return;
-        if (draggingText.pointerId !== ev.pointerId) return;
-        draggingText = null;
       });
 
       textOverlay.appendChild(div);
@@ -1424,6 +1429,40 @@ function pointerToCanvasXY(ev){
 }
 
 /* =====================
+   Text dragging (document-level)
+   ===================== */
+function onDocPointerMove(ev){
+  if (!textDrag.active) return;
+  ev.preventDefault();
+  const L = layers[textDrag.layer];
+  const a = L.actions[textDrag.index];
+  if (!a || a.type !== "text") return;
+
+  const newX = clamp(ev.clientX - textDrag.dx, 0, window.innerWidth-10);
+  const newY = clamp(ev.clientY - textDrag.dy, 0, window.innerHeight-10);
+  a.x = newX;
+  a.y = newY;
+
+  // update node position without full rebuild (fast)
+  const node = textOverlay.querySelector(`.text-box[data-layer="${textDrag.layer}"][data-index="${textDrag.index}"]`);
+  if (node){
+    node.style.left = newX + "px";
+    node.style.top  = newY + "px";
+  }
+}
+function onDocPointerUp(ev){
+  if (!textDrag.active) return;
+  ev.preventDefault();
+  textDrag.active = false;
+
+  // remove dragging class
+  const node = textOverlay.querySelector(`.text-box[data-layer="${textDrag.layer}"][data-index="${textDrag.index}"]`);
+  if (node) node.classList.remove("dragging");
+
+  saveToStorage(slideKey);
+}
+
+/* =====================
    Start / extend / finish action
    ===================== */
 function startAction(x,y,pressure,pointerType){
@@ -1479,7 +1518,6 @@ function startAction(x,y,pressure,pointerType){
   const layerIndex=activeLayer;
 
   if (tool==="highlighter"){
-    // highlighter uses current UI state (already set in setTool/highlighter button)
     pushUndo(layerIndex);
     const alpha = alphaFromTransp(transp);
     current={ type:"line", style:{ eraser:false, weight:strokeWidth, color:currentColor, alpha }, a:p0, b:p0, layer:layerIndex };
@@ -1626,7 +1664,7 @@ function finishAction(){
 }
 
 /* =====================
-   Pointer events
+   Pointer events (canvas)
    ===================== */
 function onPointerDown(ev){
   ev.preventDefault();
@@ -1675,16 +1713,6 @@ function clearActiveLayer(){
   saveToStorage(slideKey);
 }
 
-function cycleLayer(){
-  activeLayer = (activeLayer + 1) % 3;
-  clearSelection();
-  updateLayersLabel();
-  rebuildLayersMenu();
-  rebuildTextOverlay();
-  saveToStorage(slideKey);
-  showCursorHint(`Layer ${activeLayer+1}`);
-}
-
 function onKeyDown(ev){
   if (ev.key === "Shift") isShiftDown = true;
 
@@ -1698,16 +1726,9 @@ function onKeyDown(ev){
 
   const k = ev.key.toLowerCase();
 
-  // Ctrl+D = Clear
   if ((ev.ctrlKey||ev.metaKey) && k==="d"){
     ev.preventDefault();
     clearActiveLayer();
-    return;
-  }
-
-  // Cycle layers
-  if (k==="v"){
-    cycleLayer();
     return;
   }
 
@@ -1720,10 +1741,10 @@ function onKeyDown(ev){
     strokeWidthSel.value = String(v);
     updateStrokeSelectLabel();
 
-    // update state depending on current tool
+    // track state depending on current tool
     if (tool==="laser"){
       laserState.width = strokeWidth;
-    } else if (tool!=="highlighter"){
+    } else if (tool!=="eraser" && tool!=="highlighter"){
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     }
     return;
@@ -1740,16 +1761,26 @@ function onKeyDown(ev){
   if (k==="s"){
     shapeIndex = (shapeIndex + 1) % SHAPES.length;
     const sh = SHAPES[shapeIndex];
-    if (shapeSel) shapeSel.value = sh;
+    if (shapeToolSel) shapeToolSel.value = sh;
     setTool(sh);
     showCursorHint(`Shapes: ${sh}`);
   }
 
-  // Grid cycle (back)
   if (k==="g"){
     bgMode = (bgMode==="transparent") ? "dots" : (bgMode==="dots") ? "grid" : "transparent";
     bgModeSel.value = bgMode;
     saveToStorage(slideKey);
+  }
+
+  if (k==="v"){
+    activeLayer = (activeLayer + 1) % 3;
+    clearSelection();
+    updateLayersLabel();
+    rebuildLayersMenu();
+    rebuildAllBuffers();
+    rebuildTextOverlay();
+    saveToStorage(slideKey);
+    showCursorHint(`Layer ${activeLayer+1}`);
   }
 
   if (k==="n"){
@@ -1775,15 +1806,14 @@ let ui, dragHandle;
 let btnCycle, glyphCycle, btnPointer;
 
 let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn;
+let shapeToolSel;
 let bgModeSel, strokeWidthSel, smoothingSel, transpSel;
 let snapEl, undoBtn, clearBtn;
-
-let shapeSel;
 
 let colorSelect, palette, paletteGrid, colorChip;
 let layersSelect, layersMenu, layersLabel;
 
-let collapseState = "full";
+let collapseState = "partial";
 
 function initUI(){
   ui=document.getElementById("ui");
@@ -1801,7 +1831,7 @@ function initUI(){
   toolLaserBtn=document.getElementById("toolLaser");
   toolLassoBtn=document.getElementById("toolLasso");
 
-  shapeSel=document.getElementById("shapeSel");
+  shapeToolSel=document.getElementById("shapeTool");
 
   bgModeSel=document.getElementById("bgMode");
   strokeWidthSel=document.getElementById("strokeWidth");
@@ -1821,15 +1851,6 @@ function initUI(){
   undoBtn=document.getElementById("undo");
   clearBtn=document.getElementById("clear");
 
-  // Pointer button
-  btnPointer.addEventListener("click",(ev)=>{
-    ev.preventDefault();
-    ev.stopPropagation();
-    clearSelection();
-    setTool("pointer");
-    showCursorHint("Pointer");
-  });
-
   // palette
   paletteGrid.innerHTML="";
   COLORS.forEach(hex=>{
@@ -1842,11 +1863,15 @@ function initUI(){
       colorChip.style.background=hex;
       palette.classList.remove("open");
 
+      // store state depending on tool
       if (tool==="laser"){
         laserState.color = currentColor;
-      } else if (tool!=="highlighter") {
+      } else if (tool==="highlighter"){
+        // allow user color changes for highlighter if desired
+      } else if (tool!=="eraser"){
         penState = { color: currentColor, width: strokeWidth, transp, smoothing };
       }
+
       saveToStorage(slideKey);
     });
     paletteGrid.appendChild(sw);
@@ -1875,6 +1900,13 @@ function initUI(){
     collapseState = (collapseState==="full") ? "partial" : (collapseState==="partial") ? "expanded" : "full";
     applyCollapseState();
   });
+
+  // pointer button (tablet)
+  btnPointer.addEventListener("click",(ev)=>{
+    ev.stopPropagation();
+    setTool("pointer");
+  });
+
   function updateCycleGlyph(){
     glyphCycle.textContent = (collapseState==="expanded") ? "▴" : "▾";
   }
@@ -1896,13 +1928,15 @@ function initUI(){
   toolLaserBtn.addEventListener("click",()=> setTool("laser"));
   toolLassoBtn.addEventListener("click",()=> setTool("lasso"));
 
-  // shapes dropdown
-  if (shapeSel){
-    shapeSel.value = SHAPES[shapeIndex] || "arrow";
-    shapeSel.addEventListener("change", ()=>{
-      const v = shapeSel.value;
-      shapeIndex = Math.max(0, SHAPES.indexOf(v));
-      setTool(v);
+  // IMPORTANT: shapes dropdown must switch tool immediately
+  if (shapeToolSel){
+    shapeToolSel.addEventListener("change", ()=>{
+      const v = shapeToolSel.value;
+      if (v){
+        shapeIndex = Math.max(0, SHAPES.indexOf(v));
+        setTool(v);
+        showCursorHint(`Shapes: ${v}`);
+      }
     });
   }
 
@@ -1916,7 +1950,7 @@ function initUI(){
   snapEl.addEventListener("change",()=>{ snapToGrid=snapEl.checked; });
 
   undoBtn.addEventListener("click",()=>{ clearSelection(); undoActiveLayer(); });
-  clearBtn.addEventListener("click",()=>{ clearActiveLayer(); });
+  clearBtn.addEventListener("click",()=> clearActiveLayer());
 
   rebuildLayersMenu();
   updateLayersLabel();
@@ -1926,7 +1960,8 @@ function initUI(){
 
   document.getElementById("btnShortcuts").addEventListener("click",(e)=>e.preventDefault());
 
-  // Default tool: arrow
+  // default shape selected = arrow
+  if (shapeToolSel) shapeToolSel.value = "arrow";
   setTool("arrow");
 }
 
@@ -1943,14 +1978,15 @@ function buildStrokeSelect(){
   updateStrokeSelectLabel();
   strokeWidthSel.addEventListener("change",()=>{
     strokeWidth=parseInt(strokeWidthSel.value,10);
-    if(tool!=="eraser") lastNonEraserWidth=strokeWidth;
+    if(tool!=="eraser" && tool!=="highlighter" && tool!=="laser") lastNonEraserWidth=strokeWidth;
     updateStrokeSelectLabel();
 
     if (tool==="laser"){
       laserState.width = strokeWidth;
-    } else if (tool!=="highlighter") {
+    } else if (tool!=="eraser" && tool!=="highlighter"){
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     }
+    saveToStorage(slideKey);
   });
 }
 function updateStrokeSelectLabel(){
@@ -1976,9 +2012,10 @@ function buildSmoothingSelect(){
 
     if (tool==="laser"){
       laserState.smoothing = smoothing;
-    } else if (tool!=="highlighter") {
+    } else if (tool!=="eraser" && tool!=="highlighter"){
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     }
+    saveToStorage(slideKey);
   });
 }
 function updateSmoothingSelectLabel(){
@@ -2004,9 +2041,10 @@ function buildTranspSelect(){
 
     if (tool==="laser"){
       laserState.transp = transp;
-    } else if (tool!=="highlighter") {
+    } else if (tool!=="eraser" && tool!=="highlighter"){
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     }
+    saveToStorage(slideKey);
   });
 }
 function updateTranspSelectLabel(){
@@ -2017,62 +2055,34 @@ function updateTranspSelectLabel(){
   }
 }
 
-/* ---- Tool switching with proper restore behavior ---- */
-function capturePenStateIfNeeded(nextTool){
-  const goingSpecial = (nextTool==="highlighter" || nextTool==="laser");
-  const currentlySpecial = (tool==="highlighter" || tool==="laser");
-  if (goingSpecial && !currentlySpecial){
-    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
-  }
-}
-
-function applyLaserStateToUI(){
-  currentColor = laserState.color;
-  strokeWidth = laserState.width;
-  transp = laserState.transp;
-  smoothing = laserState.smoothing ?? smoothing;
-
-  colorChip.style.background = currentColor;
-  strokeWidthSel.value = String(strokeWidth);
-  smoothingSel.value = String(smoothing);
-  transpSel.value = String(transp);
-
-  updateStrokeSelectLabel();
-  updateSmoothingSelectLabel();
-  updateTranspSelectLabel();
-}
-
-function restorePenStateToUI(){
-  currentColor = penState.color;
-  strokeWidth  = penState.width;
-  transp       = penState.transp;
-  smoothing    = penState.smoothing;
-
-  lastNonEraserWidth = penState.width;
-
-  colorChip.style.background = currentColor;
-  strokeWidthSel.value = String(strokeWidth);
-  smoothingSel.value = String(smoothing);
-  transpSel.value = String(transp);
-
-  updateStrokeSelectLabel();
-  updateSmoothingSelectLabel();
-  updateTranspSelectLabel();
-}
-
 function setTool(t){
   if(!t) t="pointer";
   if (textEditor.style.display!=="none") commitTextEdit();
   clearHoldAlignTimer();
 
-  capturePenStateIfNeeded(t);
-
   const fromSpecial = (tool==="highlighter" || tool==="laser");
-  const toPenOrShape = (t==="pen" || ["line","arrow","circle","rect","ellipse"].includes(t));
+  const isGoingToSpecial = (t==="highlighter" || t==="laser");
+  const isPenOrShape = (t==="pen" || ["line","arrow","circle","rect","ellipse"].includes(t));
+
+  // save penState BEFORE entering highlighter/laser
+  if (isGoingToSpecial && !fromSpecial){
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+    lastNonEraserWidth = penState.width;
+  }
 
   tool=t;
   current=null;
 
+  // leaving special: restore penState faithfully (avoid overwriting later)
+  if (isPenOrShape && fromSpecial){
+    currentColor = penState.color;
+    strokeWidth  = penState.width;
+    transp       = penState.transp;
+    smoothing    = penState.smoothing;
+    lastNonEraserWidth = penState.width;
+  }
+
+  // tool buttons active state
   toolPenBtn.classList.toggle("active", tool==="pen");
   toolEraserBtn.classList.toggle("active", tool==="eraser");
   toolHighlighterBtn.classList.toggle("active", tool==="highlighter");
@@ -2081,41 +2091,40 @@ function setTool(t){
   toolLaserBtn.classList.toggle("active", tool==="laser");
   toolLassoBtn.classList.toggle("active", tool==="lasso");
 
-  // restore pen settings when leaving special tools to pen/shapes
-  if (fromSpecial && toPenOrShape){
-    restorePenStateToUI();
-  }
-
-  // apply laser defaults on first use, then remember user changes
-  if (tool==="laser"){
-    if (!laserEverUsed){
-      laserEverUsed = true;
-      laserState = { color:"#D7263D", width:2, transp:7, smoothing:smoothing };
+  // keep shapes dropdown selection in sync:
+  if (shapeToolSel){
+    const isShape = ["line","arrow","circle","rect","ellipse"].includes(tool);
+    if (isShape){
+      shapeToolSel.value = tool;
     }
-    applyLaserStateToUI();
   }
 
-  // highlighter: always use a thick semitransparent yellow, but DO NOT overwrite penState
+  // Laser: first use defaults, then remember user changes (laserState)
+  if (tool==="laser"){
+    currentColor = laserState.color;
+    strokeWidth  = laserState.width;
+    transp       = laserState.transp;
+    smoothing    = laserState.smoothing;
+  }
+
+  // Highlighter: defaults on entry, but do NOT destroy penState
   if (tool==="highlighter"){
     currentColor = "#FFFF00";
     strokeWidth = 20;
     transp = 7;
-
-    colorChip.style.background = currentColor;
-    strokeWidthSel.value = String(strokeWidth);
-    transpSel.value = String(transp);
-
-    updateStrokeSelectLabel();
-    updateTranspSelectLabel();
+    // smoothing keep as-is
   }
 
+  // eraser width is independent, but don't poison lastNonEraserWidth
   if (tool==="eraser"){
-    lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
-    strokeWidth=10;
-  } else if (tool!=="highlighter" && tool!=="laser" && tool!=="pointer" && tool!=="text" && tool!=="fill" && tool!=="lasso") {
-    strokeWidth=lastNonEraserWidth ?? strokeWidth ?? 2;
+    strokeWidth = 10;
+  } else if (!fromSpecial && tool!=="highlighter" && tool!=="laser" && tool!=="eraser"){
+    // normal re-entry: use lastNonEraserWidth (but not when we're restoring from special)
+    strokeWidth = lastNonEraserWidth ?? strokeWidth ?? 2;
   }
 
+  // update UI controls
+  colorChip.style.background = currentColor;
   strokeWidthSel.value = String(strokeWidth);
   smoothingSel.value = String(smoothing);
   transpSel.value = String(transp);
@@ -2123,17 +2132,9 @@ function setTool(t){
   updateSmoothingSelectLabel();
   updateTranspSelectLabel();
 
-  if (shapeSel && ["line","arrow","circle","rect","ellipse"].includes(tool)){
-    shapeSel.value = tool;
-    shapeIndex = Math.max(0, SHAPES.indexOf(tool));
-  }
-
-  // pointer events on text boxes
+  // text box interaction: pointer OR text
   const boxes = textOverlay.querySelectorAll(".text-box");
-  boxes.forEach(b=>{
-    b.style.pointerEvents = (tool==="text" || tool==="pointer") ? "auto" : "none";
-    b.classList.toggle("draggable", tool==="pointer");
-  });
+  boxes.forEach(b=> b.style.pointerEvents = (tool==="text" || tool==="pointer") ? "auto" : "none");
 
   rebuildTextOverlay();
 }
