@@ -1,50 +1,63 @@
 window.WB = window.WB || {};
 
 WB.storage = {
-  // Are we running inside an iframe?
   isEmbedded(){
     try { return window.top !== window.self; } catch(_) { return true; }
   },
 
-  // Simple deterministic hash -> short id (for referrer-based page ids)
   hashStr(str){
-    // djb2-ish
     let h = 5381;
     for (let i = 0; i < str.length; i++){
       h = ((h << 5) + h) ^ str.charCodeAt(i);
     }
-    // unsigned + base36
     return (h >>> 0).toString(36);
   },
 
-  hasExplicitPage(){
+  explicitPageId(){
     const params = new URLSearchParams(location.search);
-    if (params.has("page") || params.has("p")) return true;
-    if (location.hash && location.hash.length > 1) return true;
-    return false;
+    const q = params.get("page") || params.get("p");
+    if (q) return q;
+    if (location.hash && location.hash.length > 1) return location.hash.slice(1);
+    return "";
   },
 
-  // IMPORTANT: pageId must be STABLE across iframe re-creation (slides.com navigation).
+  referrerPageId(){
+    if (!WB.storage.isEmbedded()) return "";
+    const ref = (document.referrer || "").trim();
+    if (!ref) return "";
+    return "ref_" + WB.storage.hashStr(ref);
+  },
+
+  baseKeyPrefix(){
+    // bump version so we don't collide with older experiments
+    return `p5_whiteboard_split_v3::${location.origin}${location.pathname}`;
+  },
+
+  keyForPageId(pid){
+    return `${WB.storage.baseKeyPrefix()}::page=${pid}`;
+  },
+
+  // The pageId we *prefer* for UI/logging
   pageId(){
-    const params = new URLSearchParams(location.search);
-    const explicit = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "");
-    if (explicit) return explicit;
-
-    // If embedded (slides.com), use referrer as a stable per-slide seed.
-    // Typically referrer encodes deck + slide location, and stays constant for the embedded instance.
-    if (WB.storage.isEmbedded()){
-      const ref = (document.referrer || "").trim();
-      if (ref) return "ref_" + WB.storage.hashStr(ref);
-    }
-
-    return "default";
+    return WB.storage.explicitPageId() || WB.storage.referrerPageId() || "default";
   },
 
-  key(){
-    // Keep key stable per hosted path + derived pageId
-    const base = `p5_whiteboard_split_v2::${location.origin}${location.pathname}`;
-    const pid  = `page=${WB.storage.pageId()}`;
-    return `${base}::${pid}`;
+  // All candidate page IDs we should save/load under
+  candidatePageIds(){
+    const a = [];
+    const exp = WB.storage.explicitPageId();
+    const ref = WB.storage.referrerPageId();
+    if (exp) a.push(exp);
+    if (ref && ref !== exp) a.push(ref);
+    if (!a.length) a.push("default");
+    return a;
+  },
+
+  // Backward compatibility: your old split_v1 key (if present)
+  legacyKeySplitV1(){
+    const pid = WB.storage.pageId();
+    const base = `p5_whiteboard_split_v1::${location.origin}${location.pathname}`;
+    return `${base}::page=${pid}`;
   },
 
   _timer: null,
@@ -58,26 +71,42 @@ WB.storage = {
     const S = WB.state;
     try{
       const payload = {
-        version: "split_v2",
+        version: "split_v3",
         page: WB.storage.pageId(),
         state: S
       };
-      localStorage.setItem(WB.storage.key(), JSON.stringify(payload));
+
+      // Save under all plausible keys so slides.com URL changes won't lose it
+      for (const pid of WB.storage.candidatePageIds()){
+        localStorage.setItem(WB.storage.keyForPageId(pid), JSON.stringify(payload));
+      }
     } catch(e) {
-      // ignore (can fail in some embedded contexts)
+      // ignore (some embedded contexts can block storage)
+      // console.warn("saveNow failed", e);
     }
   },
 
   loadNow(){
     try{
-      const raw = localStorage.getItem(WB.storage.key());
-      if (!raw) return;
+      // Try new keys first
+      for (const pid of WB.storage.candidatePageIds()){
+        const raw = localStorage.getItem(WB.storage.keyForPageId(pid));
+        if (!raw) continue;
+        const data = JSON.parse(raw);
+        if (!data || !data.state) continue;
+        WB.state = Object.assign(WB.state, data.state);
+        return;
+      }
 
-      const data = JSON.parse(raw);
-      if (!data || (data.version !== "split_v1" && data.version !== "split_v2") || !data.state) return;
-
-      // Merge onto existing WB.state to keep defaults + existing object refs alive
-      WB.state = Object.assign(WB.state, data.state);
+      // Fallback: legacy split_v1 key (older versions)
+      const legacy = localStorage.getItem(WB.storage.legacyKeySplitV1());
+      if (legacy){
+        const data = JSON.parse(legacy);
+        if (data && data.state){
+          WB.state = Object.assign(WB.state, data.state);
+          return;
+        }
+      }
     } catch(e) {
       // ignore
     }
