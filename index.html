@@ -97,16 +97,13 @@
       box-shadow:var(--shadow); padding:8px;
       backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
       user-select:none;
-      width:146px; /* +10% so layer label fits on one line */
+      width:146px;
       max-width: calc(100vw - 20px); box-sizing:border-box;
     }
     #ui.partial .advanced{ display:none !important; }
     #ui.full .core, #ui.full .advanced{ display:none !important; }
 
-    .core, .advanced{
-      display:flex; flex-direction:column;
-      gap:4px;
-    }
+    .core, .advanced{ display:flex; flex-direction:column; gap:4px; }
 
     #dragHandle{
       display:flex; align-items:center; justify-content:space-between; gap:6px;
@@ -243,9 +240,7 @@
       color:rgba(0,0,0,0.86);
       font-family: var(--font);
     }
-    #textEditorTop{
-      display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;
-    }
+    #textEditorTop{ display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px; }
     #textEditorTitle{ font-size:12px; font-weight:700; opacity:0.85; }
     #textEditorTop select{ width:auto; padding:6px 10px; }
     #textEditor textarea{
@@ -309,14 +304,8 @@
       <button class="tool" id="toolEraser" title="Eraser (E)"><span class="ico">🧽</span><span>Eraser</span></button>
       <button class="tool" id="toolHighlighter" title="Highlighter (H)"><span class="ico">🖍️</span><span>Highlighter</span></button>
 
-      <select id="shapeTool" title="Shapes (S)">
-        <option value="" disabled selected>◯  Shapes</option>
-        <option value="line">—  Line</option>
-        <option value="arrow">→  Arrow</option>
-        <option value="circle">◯  Circle</option>
-        <option value="rect">▭  Rect</option>
-        <option value="ellipse">⬭  Ellipse (e=0.9)</option>
-      </select>
+      <!-- Shapes: preselect Arrow (no "Shapes" dropdown) -->
+      <button class="tool" id="toolArrow" title="Arrow (S cycles shapes)"><span class="ico">→</span><span>Arrow</span></button>
 
       <div class="color-select" id="colorSelect" title="Color">
         <div class="color-left">
@@ -424,6 +413,132 @@ const COLORS = [
   "#FFFF00", "#39FF14", "#FF00FF", "#00FFFF", "#B026FF", "#FF1744"
 ];
 
+/* =====================
+   Persistence (per slide)
+   ===================== */
+const STORAGE_PREFIX = "p5wb:v2:"; // bump if you change schema
+let slideKey = "";
+let lastSlideKey = "";
+
+function safeParseJSON(s, fallback){
+  try{ return JSON.parse(s); } catch(e){ return fallback; }
+}
+function getDeckKey(){
+  // try to be stable across Slides.com embeds
+  const u = new URL(window.location.href);
+  const deck = u.searchParams.get("deck") || u.searchParams.get("deckId") || u.searchParams.get("id");
+  const p = (u.pathname || "").replace(/\/+$/,"");
+  return (deck || p || "deck").slice(0,200);
+}
+function getSlideKeyFromURL(){
+  const u = new URL(window.location.href);
+  // common indices/ids in query
+  const sp = u.searchParams;
+  const cand =
+    sp.get("slide") || sp.get("s") ||
+    (sp.get("h")!=null && sp.get("v")!=null ? `h${sp.get("h")}-v${sp.get("v")}` : "") ||
+    sp.get("index") || sp.get("page") || sp.get("p");
+  if (cand) return String(cand);
+
+  // hash often changes on slide navigation
+  const h = (u.hash || "").replace(/^#/,"").trim();
+  if (h) return h;
+
+  // last resort: full href (but keep short-ish)
+  return (u.pathname + u.search + u.hash).slice(0,240) || "slide";
+}
+function storageKeyFor(slKey){
+  return STORAGE_PREFIX + getDeckKey() + ":" + slKey;
+}
+
+function exportState(){
+  return {
+    v: 2,
+    ts: Date.now(),
+    bgMode,
+    activeLayer,
+    layers: layers.map(L => ({
+      visible: !!L.visible,
+      actions: L.actions || []
+    }))
+  };
+}
+
+function importState(state){
+  if (!state || !state.layers || !Array.isArray(state.layers)) return false;
+
+  bgMode = state.bgMode || "transparent";
+  if (bgModeSel) bgModeSel.value = bgMode;
+
+  activeLayer = clamp(parseInt(state.activeLayer ?? 0, 10) || 0, 0, 2);
+
+  for (let i=0;i<3;i++){
+    const src = state.layers[i] || {visible:true, actions:[]};
+    layers[i].visible = (typeof src.visible === "boolean") ? src.visible : true;
+    layers[i].actions = Array.isArray(src.actions) ? src.actions : [];
+  }
+
+  clearSelection();
+  rebuildAllBuffers();
+  rebuildTextOverlay();
+  updateLayersLabel();
+  rebuildLayersMenu();
+  return true;
+}
+
+function saveToStorage(forKey){
+  if (!layers || !layers.length) return;
+  try{
+    const k = storageKeyFor(forKey || slideKey);
+    localStorage.setItem(k, JSON.stringify(exportState()));
+  } catch(e){
+    // ignore quota/blocked storage
+  }
+}
+
+function loadFromStorage(forKey){
+  const k = storageKeyFor(forKey || slideKey);
+  const raw = localStorage.getItem(k);
+  if (!raw) return false;
+  const state = safeParseJSON(raw, null);
+  return importState(state);
+}
+
+// Optional: accept slide id via postMessage (if you wire it up from Slides/reveal)
+window.addEventListener("message", (ev)=>{
+  const d = ev.data;
+  if (!d || typeof d !== "object") return;
+
+  // expected: {type:"whiteboard:setSlide", key:"h2-v0"} OR {type:"whiteboard:setSlide", h:2, v:0}
+  if (d.type === "whiteboard:setSlide"){
+    let k = d.key;
+    if (!k && (d.h!=null || d.v!=null)) k = `h${d.h ?? 0}-v${d.v ?? 0}`;
+    if (!k) return;
+
+    k = String(k);
+    if (k !== slideKey){
+      // switch slide
+      saveToStorage(slideKey);
+      slideKey = k;
+      lastSlideKey = k;
+      // reset to empty before load (so stale drawings don't flash)
+      for (let i=0;i<3;i++){ layers[i].actions=[]; layers[i].visible=true; layers[i].pg.clear(); }
+      loadFromStorage(slideKey);
+      rebuildAllBuffers();
+      rebuildTextOverlay();
+    }
+  }
+
+  // expected: {type:"whiteboard:save"} or {type:"whiteboard:clear"}
+  if (d.type === "whiteboard:save") saveToStorage(slideKey);
+  if (d.type === "whiteboard:clear"){
+    for (let i=0;i<3;i++){ layers[i].actions=[]; layers[i].visible=true; layers[i].pg.clear(); }
+    rebuildAllBuffers();
+    rebuildTextOverlay();
+    saveToStorage(slideKey);
+  }
+});
+
 let tool = "pointer";
 let strokeWidth = 2;
 let smoothing = 2;
@@ -462,7 +577,7 @@ let lastMovePos = {x:0,y:0};
 
 // Shapes cycling (S)
 const SHAPES = ["line","arrow","circle","rect","ellipse"];
-let shapeIndex = 0;
+let shapeIndex = 1; // default to arrow
 
 // Layers (3)
 let layers = [];
@@ -640,6 +755,7 @@ function deleteSelection(){
   clearSelection();
   rebuildLayerBuffer(activeLayer);
   rebuildTextOverlay();
+  saveToStorage(slideKey);
 }
 
 /* =====================
@@ -658,6 +774,7 @@ function undoActiveLayer(){
   layers[activeLayer].visible = (typeof snap.visible==="boolean") ? snap.visible : true;
   rebuildLayerBuffer(activeLayer);
   rebuildTextOverlay();
+  saveToStorage(slideKey);
 }
 
 /* =====================
@@ -676,9 +793,40 @@ function setup(){
     layers.push({ pg, actions: [], visible: true });
   }
 
+  // init persistence key
+  slideKey = getSlideKeyFromURL();
+  lastSlideKey = slideKey;
+
   initUI();
+
+  // load saved drawing for this slide (if any)
+  loadFromStorage(slideKey);
+
   rebuildAllBuffers();
   rebuildTextOverlay();
+
+  // poll for slide changes (hash/query often changes in Slides/reveal embeds)
+  setInterval(()=>{
+    const k = getSlideKeyFromURL();
+    if (k && k !== lastSlideKey){
+      saveToStorage(lastSlideKey);
+      lastSlideKey = k;
+      slideKey = k;
+
+      // reset quickly to avoid showing previous slide
+      for (let i=0;i<3;i++){ layers[i].actions=[]; layers[i].visible=true; layers[i].pg.clear(); }
+
+      loadFromStorage(slideKey);
+      rebuildAllBuffers();
+      rebuildTextOverlay();
+    }
+  }, 350);
+
+  // save on background/unload
+  document.addEventListener("visibilitychange", ()=>{
+    if (document.hidden) saveToStorage(slideKey);
+  });
+  window.addEventListener("beforeunload", ()=> saveToStorage(slideKey));
 
   const canvasEl = document.querySelector("canvas");
   canvasEl.style.touchAction="none";
@@ -1220,6 +1368,7 @@ function commitTextEdit(){
 
   cancelTextEdit();
   rebuildTextOverlay();
+  saveToStorage(slideKey);
 }
 
 /* =====================
@@ -1263,12 +1412,12 @@ function startAction(x,y,pressure,pointerType){
     if (ok){
       layers[activeLayer].actions.push({type:"fill", x, y, color: currentColor, alpha: a});
       rebuildTextOverlay();
+      saveToStorage(slideKey);
     }
     return;
   }
 
   if (tool==="lasso"){
-    // if clicked inside existing bbox -> move selection
     if (lasso.selectedIdx.length && pointInBBox(x,y,lasso.bbox)){
       pushUndo(activeLayer);
       lasso.mode="move";
@@ -1288,13 +1437,11 @@ function startAction(x,y,pressure,pointerType){
     return;
   }
 
-  // other tools clear selection
   clearSelection();
 
   const p0=snapPoint(x,y);
   const layerIndex=activeLayer;
 
-  // Highlighter defaults (always): bright yellow + transp 7
   if (tool==="highlighter"){
     strokeWidth = 20;
     transp = 7;
@@ -1309,7 +1456,6 @@ function startAction(x,y,pressure,pointerType){
     return;
   }
 
-  // Pen / eraser
   if (tool==="pen" || tool==="eraser"){
     pushUndo(layerIndex);
     const style=makeStyleForCurrent(pressure,pointerType);
@@ -1317,7 +1463,6 @@ function startAction(x,y,pressure,pointerType){
     return;
   }
 
-  // Shapes
   if (["line","arrow","circle","rect","ellipse"].includes(tool)) pushUndo(layerIndex);
 
   const style=makeStyleForCurrent(pressure,pointerType);
@@ -1398,6 +1543,7 @@ function finishAction(){
       lasso.moveStart=null;
       rebuildLayerBuffer(activeLayer);
       rebuildTextOverlay();
+      saveToStorage(slideKey);
       return;
     }
     if (lasso.selecting){
@@ -1446,6 +1592,7 @@ function finishAction(){
 
   current=null;
   rebuildTextOverlay();
+  saveToStorage(slideKey);
 }
 
 /* =====================
@@ -1510,7 +1657,6 @@ function onKeyDown(ev){
     lastNonEraserWidth = v;
     strokeWidthSel.value = String(v);
     updateStrokeSelectLabel();
-    // update penState for restore after laser/highlighter
     penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     return;
   }
@@ -1526,7 +1672,6 @@ function onKeyDown(ev){
   if (k==="s"){
     shapeIndex = (shapeIndex + 1) % SHAPES.length;
     const sh = SHAPES[shapeIndex];
-    shapeToolSel.value = sh;
     setTool(sh);
     showCursorHint(`Shapes: ${sh}`);
   }
@@ -1534,6 +1679,7 @@ function onKeyDown(ev){
   if (k==="g"){
     bgMode = (bgMode==="transparent") ? "dots" : (bgMode==="dots") ? "grid" : "transparent";
     bgModeSel.value = bgMode;
+    saveToStorage(slideKey);
   }
 
   if (k==="n"){
@@ -1558,8 +1704,7 @@ function onKeyDown(ev){
 let ui, dragHandle;
 let btnCycle, glyphCycle;
 
-let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn;
-let shapeToolSel;
+let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn, toolArrowBtn;
 let bgModeSel, strokeWidthSel, smoothingSel, transpSel;
 let snapEl, undoBtn, clearBtn;
 
@@ -1578,12 +1723,11 @@ function initUI(){
   toolPenBtn=document.getElementById("toolPen");
   toolEraserBtn=document.getElementById("toolEraser");
   toolHighlighterBtn=document.getElementById("toolHighlighter");
+  toolArrowBtn=document.getElementById("toolArrow");
   toolFillBtn=document.getElementById("toolFill");
   toolTextBtn=document.getElementById("toolText");
   toolLaserBtn=document.getElementById("toolLaser");
   toolLassoBtn=document.getElementById("toolLasso");
-
-  shapeToolSel=document.getElementById("shapeTool");
 
   bgModeSel=document.getElementById("bgMode");
   strokeWidthSel=document.getElementById("strokeWidth");
@@ -1614,8 +1758,8 @@ function initUI(){
       currentColor=hex;
       colorChip.style.background=hex;
       palette.classList.remove("open");
-      // update penState so returning from laser/highlighter respects latest color
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+      saveToStorage(slideKey);
     });
     paletteGrid.appendChild(sw);
   });
@@ -1656,18 +1800,16 @@ function initUI(){
   window.applyCollapseState = applyCollapseState;
 
   // tools
-  toolPenBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("pen"); });
-  toolEraserBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("eraser"); });
-  toolHighlighterBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("highlighter"); });
-  toolFillBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("fill"); });
-  toolTextBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("text"); });
-  toolLaserBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("laser"); });
-  toolLassoBtn.addEventListener("click",()=>{ shapeToolSel.selectedIndex=0; setTool("lasso"); });
+  toolPenBtn.addEventListener("click",()=> setTool("pen"));
+  toolEraserBtn.addEventListener("click",()=> setTool("eraser"));
+  toolHighlighterBtn.addEventListener("click",()=> setTool("highlighter"));
+  toolArrowBtn.addEventListener("click",()=>{ shapeIndex = 1; setTool("arrow"); });
+  toolFillBtn.addEventListener("click",()=> setTool("fill"));
+  toolTextBtn.addEventListener("click",()=> setTool("text"));
+  toolLaserBtn.addEventListener("click",()=> setTool("laser"));
+  toolLassoBtn.addEventListener("click",()=> setTool("lasso"));
 
-  shapeToolSel.addEventListener("input",()=> setTool(shapeToolSel.value));
-  shapeToolSel.addEventListener("change",()=> setTool(shapeToolSel.value));
-
-  bgModeSel.addEventListener("change",()=>{ bgMode=bgModeSel.value; });
+  bgModeSel.addEventListener("change",()=>{ bgMode=bgModeSel.value; saveToStorage(slideKey); });
 
   buildStrokeSelect();
   buildSmoothingSelect();
@@ -1683,6 +1825,7 @@ function initUI(){
     layers[activeLayer].actions = [];
     rebuildLayerBuffer(activeLayer);
     rebuildTextOverlay();
+    saveToStorage(slideKey);
   });
 
   rebuildLayersMenu();
@@ -1692,6 +1835,9 @@ function initUI(){
   initDrag();
 
   document.getElementById("btnShortcuts").addEventListener("click",(e)=>e.preventDefault());
+
+  // “shapes” defaults to arrow button (no dropdown)
+  setTool("arrow");
 }
 
 function buildStrokeSelect(){
@@ -1799,12 +1945,12 @@ function setTool(t){
   toolPenBtn.classList.toggle("active", tool==="pen");
   toolEraserBtn.classList.toggle("active", tool==="eraser");
   toolHighlighterBtn.classList.toggle("active", tool==="highlighter");
+  toolArrowBtn.classList.toggle("active", tool==="arrow");
   toolFillBtn.classList.toggle("active", tool==="fill");
   toolTextBtn.classList.toggle("active", tool==="text");
   toolLaserBtn.classList.toggle("active", tool==="laser");
   toolLassoBtn.classList.toggle("active", tool==="lasso");
 
-  // Laser defaults: red + transp 1 + width 2
   if (tool==="laser"){
     currentColor = "#D7263D";
     transp = 1;
@@ -1818,7 +1964,6 @@ function setTool(t){
     updateStrokeSelectLabel();
   }
 
-  // Highlighter defaults shown in dropdowns
   if (tool==="highlighter"){
     strokeWidth = 20;
     transp = 7;
@@ -1922,6 +2067,7 @@ function rebuildLayersMenu(){
       layersMenu.classList.remove("open");
       rebuildAllBuffers();
       rebuildTextOverlay();
+      saveToStorage(slideKey);
     });
 
     layersMenu.appendChild(item);
