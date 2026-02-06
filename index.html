@@ -72,7 +72,9 @@
       white-space: pre-wrap;
       color:var(--text);
       font-family: var(--font);
+      cursor: default;
     }
+    .text-box.draggable{ cursor: move; }
 
     #cursorHint{
       position:fixed; z-index:999999;
@@ -273,7 +275,7 @@
       </div>
 
       <div class="handleBtns">
-        <!-- NEW: pointer button for tablets -->
+        <!-- NEW pointer mini button -->
         <button id="btnPointer" class="miniBtn" title="Pointer (Esc)">🖱️</button>
 
         <div class="shortcutWrap">
@@ -291,9 +293,10 @@
             <div class="row"><span><code>T</code></span><span>Text</span></div>
             <div class="row"><span><code>L</code></span><span>Lasso</span></div>
             <div class="row"><span><code>R</code></span><span>Laser</span></div>
+            <div class="row"><span><code>V</code></span><span>Next layer</span></div>
             <div class="row"><span><code>Shift</code></span><span>Align line/arrow</span></div>
             <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
-            <div class="row"><span><code>Ctrl+D</code></span><span>Clear layer</span></div>
+            <div class="row"><span><code>Ctrl+D</code></span><span>Clear</span></div>
             <div class="row"><span><code>Del</code></span><span>Delete selection</span></div>
             <div class="row"><span><code>1..9</code></span><span>Width</span></div>
           </div>
@@ -309,7 +312,7 @@
       <button class="tool" id="toolEraser" title="Eraser (E)"><span class="ico">🧽</span><span>Eraser</span></button>
       <button class="tool" id="toolHighlighter" title="Highlighter (H)"><span class="ico">🖍️</span><span>Highlighter</span></button>
 
-      <!-- Shapes dropdown is back (default: Arrow); S still cycles -->
+      <!-- Shapes dropdown (Arrow preselected). S still cycles. -->
       <select id="shapeSel" title="Shapes (S cycles)">
         <option value="line">— Line</option>
         <option value="arrow" selected>→ Arrow</option>
@@ -542,7 +545,7 @@ window.addEventListener("message", (ev)=>{
 let tool = "pointer";
 let strokeWidth = 2;
 let smoothing = 2;
-let transp = 1;
+let transp = 1; // 1..10
 let currentColor = COLORS[0];
 let snapToGrid = false;
 let bgMode = "transparent";
@@ -558,16 +561,24 @@ const textOverlay = document.getElementById("text-overlay");
 const cursorHint = document.getElementById("cursorHint");
 let lastPointerClient = {x: 0, y: 0};
 
+// Remember pen/shape settings across special tools
 let penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+
+// Laser state: defaults first use, then user-modifiable
+let laserState = { color:"#D7263D", width:2, transp:7, smoothing:2 };
+let laserEverUsed = false;
 
 // text tool
 let defaultTextSize = 20;
-let defaultTextStyle = "regular";
+let defaultTextStyle = "regular"; // regular|bold|italic
 const textEditor = document.getElementById("textEditor");
 const textInput  = document.getElementById("textInput");
 const textSizeEditor = document.getElementById("textSizeEditor");
 const textStyleEditor = document.getElementById("textStyleEditor");
 let textDraft = null;
+
+// Text dragging (pointer tool)
+let draggingText = null;
 
 // Hold alignment timers
 let holdAlignTimer = null;
@@ -576,7 +587,7 @@ let lastMovePos = {x:0,y:0};
 
 // Shapes cycling (S)
 const SHAPES = ["line","arrow","circle","rect","ellipse"];
-let shapeIndex = 1; // default Arrow
+let shapeIndex = 1; // default to arrow
 
 // Layers (3)
 let layers = [];
@@ -585,14 +596,14 @@ let undoStack = Array.from({length:3}, () => []);
 const UNDO_LIMIT = 40;
 
 /* =====================
-   Lasso
+   Lasso (move + delete only)
    ===================== */
 let lasso = {
   points: [],
   selecting: false,
   selectedIdx: [],
   bbox: null,
-  mode: "idle",
+  mode: "idle",       // idle | move
   moveStart: null
 };
 
@@ -1106,7 +1117,7 @@ function rebuildAllBuffers(){ for (let i=0;i<3;i++) rebuildLayerBuffer(i); }
    ===================== */
 function updateLaserTrail(){
   const now=millis();
-  laserTrail = laserTrail.filter(p=> now-p.t < 2000);
+  laserTrail = laserTrail.filter(p=> now-p.t < LASER_FADE_MS);
 }
 function drawLaserTrail(){
   if(!laserTrail.length) return;
@@ -1118,7 +1129,7 @@ function drawLaserTrail(){
   for(let i=1;i<laserTrail.length;i++){
     const p=laserTrail[i-1], q=laserTrail[i];
     const age=millis()-q.t;
-    const a=map(age,0,2000,200,0,true);
+    const a=map(age,0,LASER_FADE_MS,200,0,true);
     stroke(red(c),green(c),blue(c),a);
     strokeWeight(w); strokeCap(ROUND);
     line(p.x,p.y,q.x,q.y);
@@ -1156,6 +1167,41 @@ function drawLassoOverlay(){
 }
 
 /* =====================
+   Line/arrow alignment (kept)
+   ===================== */
+function maybeAlignLineLike(a){
+  if (!a || !(a.type==="line" || a.type==="arrow")) return;
+  const dx = a.b.x - a.a.x;
+  const dy = a.b.y - a.a.y;
+  if (Math.abs(dx) >= Math.abs(dy)) a.b.y = a.a.y;
+  else a.b.x = a.a.x;
+}
+function clearHoldAlignTimer(){
+  if (holdAlignTimer){ clearTimeout(holdAlignTimer); holdAlignTimer=null; }
+}
+function armHoldAlignTimer(){
+  clearHoldAlignTimer();
+  holdAlignTimer = setTimeout(()=>{
+    if (!current) return;
+
+    if (current.type==="line" || current.type==="arrow"){
+      maybeAlignLineLike(current);
+      return;
+    }
+  }, HOLD_ALIGN_MS);
+}
+function isStill(now, x, y){
+  const moved = dist2(x,y,lastMovePos.x,lastMovePos.y) > STILL_EPS_PX*STILL_EPS_PX;
+  if (moved){
+    lastMovePos = {x,y};
+    lastSignificantMoveAt = now;
+    clearHoldAlignTimer();
+    return false;
+  }
+  return (now - lastSignificantMoveAt) > STILL_TIME_MS;
+}
+
+/* =====================
    Text overlay + MathJax v2 SVG
    ===================== */
 function typesetTextOverlay(){
@@ -1190,7 +1236,6 @@ function rebuildTextOverlay(){
       div.style.left = a.x + "px";
       div.style.top  = a.y + "px";
       div.style.fontSize = (a.size || 20) + "px";
-      div.style.pointerEvents = (tool==="text" || tool==="pointer") ? "auto" : "none";
 
       applyTextStyleToNode(div, a.style || "regular");
       div.textContent = a.raw;
@@ -1198,11 +1243,80 @@ function rebuildTextOverlay(){
       div.dataset.layer = String(li);
       div.dataset.index = String(i);
 
+      // Text edit (text tool)
       div.addEventListener("pointerdown",(ev)=>{
         if (tool==="text"){
           ev.stopPropagation();
+          ev.preventDefault();
           openTextEditor(a.x, a.y, a.raw, a.size, a.style, i, li);
         }
+      });
+
+      // Text drag (pointer tool)
+      div.addEventListener("pointerdown",(ev)=>{
+        if (tool!=="pointer") return;
+        // only left button / primary
+        if (ev.button != null && ev.button !== 0) return;
+
+        ev.stopPropagation();
+        ev.preventDefault();
+
+        const act = layers[li].actions[i];
+        if (!act || act.type!=="text") return;
+
+        div.classList.add("draggable");
+        draggingText = {
+          layer: li,
+          index: i,
+          startClientX: ev.clientX,
+          startClientY: ev.clientY,
+          startX: act.x,
+          startY: act.y,
+          pointerId: ev.pointerId
+        };
+        div.setPointerCapture(ev.pointerId);
+      });
+
+      div.addEventListener("pointermove",(ev)=>{
+        if (!draggingText) return;
+        if (draggingText.pointerId !== ev.pointerId) return;
+        const act = layers[draggingText.layer].actions[draggingText.index];
+        if (!act || act.type!=="text") return;
+
+        ev.stopPropagation();
+        ev.preventDefault();
+
+        const dx = ev.clientX - draggingText.startClientX;
+        const dy = ev.clientY - draggingText.startClientY;
+
+        act.x = draggingText.startX + dx;
+        act.y = draggingText.startY + dy;
+
+        div.style.left = act.x + "px";
+        div.style.top  = act.y + "px";
+      });
+
+      div.addEventListener("pointerup",(ev)=>{
+        if (!draggingText) return;
+        if (draggingText.pointerId !== ev.pointerId) return;
+
+        ev.stopPropagation();
+        ev.preventDefault();
+
+        // update w/h from DOM
+        const act = layers[draggingText.layer].actions[draggingText.index];
+        if (act && act.type==="text"){
+          act.w = div.offsetWidth;
+          act.h = div.offsetHeight;
+          saveToStorage(slideKey);
+        }
+        draggingText = null;
+      });
+
+      div.addEventListener("pointercancel",(ev)=>{
+        if (!draggingText) return;
+        if (draggingText.pointerId !== ev.pointerId) return;
+        draggingText = null;
       });
 
       textOverlay.appendChild(div);
@@ -1309,6 +1423,9 @@ function pointerToCanvasXY(ev){
    ===================== */
 function startAction(x,y,pressure,pointerType){
   closePopups();
+  clearHoldAlignTimer();
+  lastSignificantMoveAt = performance.now();
+  lastMovePos = {x,y};
 
   if (tool==="pointer") return;
 
@@ -1357,16 +1474,10 @@ function startAction(x,y,pressure,pointerType){
   const layerIndex=activeLayer;
 
   if (tool==="highlighter"){
-    strokeWidth = 20;
-    transp = 7;
-    strokeWidthSel.value = String(strokeWidth);
-    transpSel.value = String(transp);
-    updateStrokeSelectLabel();
-    updateTranspSelectLabel();
-
+    // highlighter uses current UI state (already set in setTool/highlighter button)
     pushUndo(layerIndex);
     const alpha = alphaFromTransp(transp);
-    current={ type:"line", style:{ eraser:false, weight:strokeWidth, color:"#FFFF00", alpha }, a:p0, b:p0, layer:layerIndex };
+    current={ type:"line", style:{ eraser:false, weight:strokeWidth, color:currentColor, alpha }, a:p0, b:p0, layer:layerIndex };
     return;
   }
 
@@ -1418,8 +1529,16 @@ function extendAction(x,y,pressure,pointerType){
     return;
   }
 
+  const now = performance.now();
+  const still = isStill(now, p.x, p.y);
+  if (still && !holdAlignTimer) armHoldAlignTimer();
+
   if (current.type==="line" || current.type==="arrow"){
     current.b = p;
+    if (isShiftDown){
+      maybeAlignLineLike(current);
+      clearHoldAlignTimer();
+    }
     return;
   }
 
@@ -1441,6 +1560,8 @@ function extendAction(x,y,pressure,pointerType){
 }
 
 function finishAction(){
+  clearHoldAlignTimer();
+
   if (tool==="lasso"){
     if (lasso.mode==="move"){
       lasso.mode="idle";
@@ -1540,13 +1661,23 @@ function onPointerUp(ev){
 /* =====================
    Keyboard shortcuts
    ===================== */
-function doClearActiveLayer(){
+function clearActiveLayer(){
   clearSelection();
   pushUndo(activeLayer);
   layers[activeLayer].actions = [];
   rebuildLayerBuffer(activeLayer);
   rebuildTextOverlay();
   saveToStorage(slideKey);
+}
+
+function cycleLayer(){
+  activeLayer = (activeLayer + 1) % 3;
+  clearSelection();
+  updateLayersLabel();
+  rebuildLayersMenu();
+  rebuildTextOverlay();
+  saveToStorage(slideKey);
+  showCursorHint(`Layer ${activeLayer+1}`);
 }
 
 function onKeyDown(ev){
@@ -1562,16 +1693,34 @@ function onKeyDown(ev){
 
   const k = ev.key.toLowerCase();
 
-  // Ctrl+D = Clear (active layer)
+  // Ctrl+D = Clear
   if ((ev.ctrlKey||ev.metaKey) && k==="d"){
     ev.preventDefault();
-    doClearActiveLayer();
+    clearActiveLayer();
     return;
   }
 
-  if ((ev.ctrlKey||ev.metaKey) && k==="z"){
-    ev.preventDefault();
-    undoActiveLayer();
+  // Cycle layers
+  if (k==="v"){
+    cycleLayer();
+    return;
+  }
+
+  if (/^[1-9]$/.test(k)){
+    const idx = parseInt(k,10) - 1;
+    const vals=[1,2,3,4,5,8,10,20,30];
+    const v = vals[idx] ?? vals[vals.length-1];
+    strokeWidth = v;
+    lastNonEraserWidth = v;
+    strokeWidthSel.value = String(v);
+    updateStrokeSelectLabel();
+
+    // update state depending on current tool
+    if (tool==="laser"){
+      laserState.width = strokeWidth;
+    } else if (tool!=="highlighter"){
+      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+    }
     return;
   }
 
@@ -1591,6 +1740,23 @@ function onKeyDown(ev){
     showCursorHint(`Shapes: ${sh}`);
   }
 
+  // Grid cycle (back)
+  if (k==="g"){
+    bgMode = (bgMode==="transparent") ? "dots" : (bgMode==="dots") ? "grid" : "transparent";
+    bgModeSel.value = bgMode;
+    saveToStorage(slideKey);
+  }
+
+  if (k==="n"){
+    snapToGrid = !snapToGrid;
+    snapEl.checked = snapToGrid;
+  }
+
+  if ((ev.ctrlKey||ev.metaKey) && k==="z"){
+    ev.preventDefault();
+    undoActiveLayer();
+  }
+
   if (lasso.selectedIdx.length && (ev.key==="Delete" || ev.key==="Backspace")){
     ev.preventDefault();
     deleteSelection();
@@ -1608,6 +1774,7 @@ let bgModeSel, strokeWidthSel, smoothingSel, transpSel;
 let snapEl, undoBtn, clearBtn;
 
 let shapeSel;
+
 let colorSelect, palette, paletteGrid, colorChip;
 let layersSelect, layersMenu, layersLabel;
 
@@ -1649,7 +1816,7 @@ function initUI(){
   undoBtn=document.getElementById("undo");
   clearBtn=document.getElementById("clear");
 
-  // NEW pointer button
+  // Pointer button
   btnPointer.addEventListener("click",(ev)=>{
     ev.preventDefault();
     ev.stopPropagation();
@@ -1669,7 +1836,12 @@ function initUI(){
       currentColor=hex;
       colorChip.style.background=hex;
       palette.classList.remove("open");
-      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+
+      if (tool==="laser"){
+        laserState.color = currentColor;
+      } else if (tool!=="highlighter") {
+        penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+      }
       saveToStorage(slideKey);
     });
     paletteGrid.appendChild(sw);
@@ -1739,7 +1911,7 @@ function initUI(){
   snapEl.addEventListener("change",()=>{ snapToGrid=snapEl.checked; });
 
   undoBtn.addEventListener("click",()=>{ clearSelection(); undoActiveLayer(); });
-  clearBtn.addEventListener("click",()=>{ doClearActiveLayer(); });
+  clearBtn.addEventListener("click",()=>{ clearActiveLayer(); });
 
   rebuildLayersMenu();
   updateLayersLabel();
@@ -1749,6 +1921,7 @@ function initUI(){
 
   document.getElementById("btnShortcuts").addEventListener("click",(e)=>e.preventDefault());
 
+  // Default tool: arrow
   setTool("arrow");
 }
 
@@ -1767,7 +1940,12 @@ function buildStrokeSelect(){
     strokeWidth=parseInt(strokeWidthSel.value,10);
     if(tool!=="eraser") lastNonEraserWidth=strokeWidth;
     updateStrokeSelectLabel();
-    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+
+    if (tool==="laser"){
+      laserState.width = strokeWidth;
+    } else if (tool!=="highlighter") {
+      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+    }
   });
 }
 function updateStrokeSelectLabel(){
@@ -1790,7 +1968,12 @@ function buildSmoothingSelect(){
   smoothingSel.addEventListener("change",()=>{
     smoothing=parseInt(smoothingSel.value,10);
     updateSmoothingSelectLabel();
-    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+
+    if (tool==="laser"){
+      laserState.smoothing = smoothing;
+    } else if (tool!=="highlighter") {
+      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+    }
   });
 }
 function updateSmoothingSelectLabel(){
@@ -1813,7 +1996,12 @@ function buildTranspSelect(){
   transpSel.addEventListener("change",()=>{
     transp=parseInt(transpSel.value,10);
     updateTranspSelectLabel();
-    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+
+    if (tool==="laser"){
+      laserState.transp = transp;
+    } else if (tool!=="highlighter") {
+      penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+    }
   });
 }
 function updateTranspSelectLabel(){
@@ -1824,9 +2012,58 @@ function updateTranspSelectLabel(){
   }
 }
 
+/* ---- Tool switching with proper restore behavior ---- */
+function capturePenStateIfNeeded(nextTool){
+  const goingSpecial = (nextTool==="highlighter" || nextTool==="laser");
+  const currentlySpecial = (tool==="highlighter" || tool==="laser");
+  if (goingSpecial && !currentlySpecial){
+    penState = { color: currentColor, width: strokeWidth, transp, smoothing };
+  }
+}
+
+function applyLaserStateToUI(){
+  currentColor = laserState.color;
+  strokeWidth = laserState.width;
+  transp = laserState.transp;
+  smoothing = laserState.smoothing ?? smoothing;
+
+  colorChip.style.background = currentColor;
+  strokeWidthSel.value = String(strokeWidth);
+  smoothingSel.value = String(smoothing);
+  transpSel.value = String(transp);
+
+  updateStrokeSelectLabel();
+  updateSmoothingSelectLabel();
+  updateTranspSelectLabel();
+}
+
+function restorePenStateToUI(){
+  currentColor = penState.color;
+  strokeWidth  = penState.width;
+  transp       = penState.transp;
+  smoothing    = penState.smoothing;
+
+  lastNonEraserWidth = penState.width;
+
+  colorChip.style.background = currentColor;
+  strokeWidthSel.value = String(strokeWidth);
+  smoothingSel.value = String(smoothing);
+  transpSel.value = String(transp);
+
+  updateStrokeSelectLabel();
+  updateSmoothingSelectLabel();
+  updateTranspSelectLabel();
+}
+
 function setTool(t){
   if(!t) t="pointer";
   if (textEditor.style.display!=="none") commitTextEdit();
+  clearHoldAlignTimer();
+
+  capturePenStateIfNeeded(t);
+
+  const fromSpecial = (tool==="highlighter" || tool==="laser");
+  const toPenOrShape = (t==="pen" || ["line","arrow","circle","rect","ellipse"].includes(t));
 
   tool=t;
   current=null;
@@ -1839,13 +2076,59 @@ function setTool(t){
   toolLaserBtn.classList.toggle("active", tool==="laser");
   toolLassoBtn.classList.toggle("active", tool==="lasso");
 
+  // restore pen settings when leaving special tools to pen/shapes
+  if (fromSpecial && toPenOrShape){
+    restorePenStateToUI();
+  }
+
+  // apply laser defaults on first use, then remember user changes
+  if (tool==="laser"){
+    if (!laserEverUsed){
+      laserEverUsed = true;
+      laserState = { color:"#D7263D", width:2, transp:7, smoothing:smoothing };
+    }
+    applyLaserStateToUI();
+  }
+
+  // highlighter: always use a thick semitransparent yellow, but DO NOT overwrite penState
+  if (tool==="highlighter"){
+    currentColor = "#FFFF00";
+    strokeWidth = 20;
+    transp = 7;
+
+    colorChip.style.background = currentColor;
+    strokeWidthSel.value = String(strokeWidth);
+    transpSel.value = String(transp);
+
+    updateStrokeSelectLabel();
+    updateTranspSelectLabel();
+  }
+
+  if (tool==="eraser"){
+    lastNonEraserWidth = lastNonEraserWidth ?? strokeWidth;
+    strokeWidth=10;
+  } else if (tool!=="highlighter" && tool!=="laser" && tool!=="pointer" && tool!=="text" && tool!=="fill" && tool!=="lasso") {
+    strokeWidth=lastNonEraserWidth ?? strokeWidth ?? 2;
+  }
+
+  strokeWidthSel.value = String(strokeWidth);
+  smoothingSel.value = String(smoothing);
+  transpSel.value = String(transp);
+  updateStrokeSelectLabel();
+  updateSmoothingSelectLabel();
+  updateTranspSelectLabel();
+
   if (shapeSel && ["line","arrow","circle","rect","ellipse"].includes(tool)){
     shapeSel.value = tool;
     shapeIndex = Math.max(0, SHAPES.indexOf(tool));
   }
 
+  // pointer events on text boxes
   const boxes = textOverlay.querySelectorAll(".text-box");
-  boxes.forEach(b=> b.style.pointerEvents = (tool==="text") ? "auto" : "none");
+  boxes.forEach(b=>{
+    b.style.pointerEvents = (tool==="text" || tool==="pointer") ? "auto" : "none";
+    b.classList.toggle("draggable", tool==="pointer");
+  });
 
   rebuildTextOverlay();
 }
