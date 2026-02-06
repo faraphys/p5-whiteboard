@@ -1,5 +1,4 @@
-// app.js — updated to diagnose and prevent "freeze after selecting Shapes"
-// PATCHED: robust persistence across slide changes (load BEFORE setupP5, then apply AFTER)
+// app.js — hardened init for Slides.com + prevent "freeze after selecting Shapes"
 
 (function(){
   // simple overlay to show errors without opening DevTools
@@ -31,6 +30,86 @@
 
   // Watchdog: if a module uses noLoop(), we resume periodically
   setInterval(() => { WB.forceLoop(); }, 500);
+
+  // ============================================================
+  // CRITICAL: Ensure WB.state has all containers BEFORE ui/drawing
+  // Prevents: "Cannot set properties of undefined (setting '0')"
+  // ============================================================
+  WB.ensureStateDefaults = function ensureStateDefaults(){
+    WB.state = WB.state || {};
+    const S = WB.state;
+
+    // core fields (only if missing)
+    if (typeof S.tool !== "string") S.tool = "pointer";
+
+    if (typeof S.strokeWidth !== "number") S.strokeWidth = 2;
+    if (typeof S.smoothing !== "number") S.smoothing = 2;
+    if (typeof S.transp !== "number") S.transp = 1;
+
+    const firstColor =
+      (WB.CONFIG && Array.isArray(WB.CONFIG.COLORS) && WB.CONFIG.COLORS[0]) ? WB.CONFIG.COLORS[0] : "#000000";
+    if (typeof S.currentColor !== "string") S.currentColor = firstColor;
+
+    if (typeof S.snapToGrid !== "boolean") S.snapToGrid = false;
+    if (typeof S.bgMode !== "string") S.bgMode = "transparent";
+
+    if (typeof S.collapseState !== "string") S.collapseState = "partial";
+    if (typeof S.darkMode !== "boolean") S.darkMode = false;
+
+    // arrays / objects that MUST exist
+    if (!Array.isArray(S.layers)) S.layers = [];
+    if (typeof S.activeLayer !== "number") S.activeLayer = 0;
+
+    if (!Array.isArray(S.undoStack) || S.undoStack.length !== 3){
+      S.undoStack = Array.from({ length: 3 }, () => []);
+    } else {
+      // ensure each stack is an array
+      for (let i=0;i<3;i++){
+        if (!Array.isArray(S.undoStack[i])) S.undoStack[i] = [];
+      }
+    }
+
+    if (!Array.isArray(S.laserTrail)) S.laserTrail = [];
+    if (typeof S.laserInitialized !== "boolean") S.laserInitialized = false;
+
+    if (!S.penState) S.penState = null;
+
+    if (typeof S.highlighterInitialized !== "boolean") S.highlighterInitialized = false;
+    if (typeof S.highlighterWidth !== "number") S.highlighterWidth = 20;
+    if (typeof S.highlighterTransp !== "number") S.highlighterTransp = 7;
+
+    if (!S.lastPointerClient) S.lastPointerClient = { x: 0, y: 0 };
+
+    // lasso structure
+    if (!S.lasso || typeof S.lasso !== "object"){
+      S.lasso = {
+        points: [],
+        selecting: false,
+        selectedIdx: [],
+        bbox: null,
+        obb: null,
+        mode: "idle",
+        handle: null,
+        moveStart: null,
+        pivot: null,
+        startOBB: null,
+        startActionsSnapshot: null,
+        liveText: null
+      };
+    } else {
+      if (!Array.isArray(S.lasso.selectedIdx)) S.lasso.selectedIdx = [];
+      if (!Array.isArray(S.lasso.points)) S.lasso.points = [];
+      if (typeof S.lasso.mode !== "string") S.lasso.mode = "idle";
+    }
+
+    if (typeof S.defaultTextSize !== "number") S.defaultTextSize = 20;
+    if (typeof S.textDraft === "undefined") S.textDraft = null;
+
+    // ui ref holder
+    if (!S.ui || typeof S.ui !== "object") S.ui = {};
+
+    return S;
+  };
 
   // ===== Keyboard focus + Delete handler (reliable in iframes) =====
   WB.installKeyboard = function installKeyboard(){
@@ -82,29 +161,20 @@
 
   // ---- p5 entry points ----
   window.setup = function setup(){
-    // init in correct order for persistence:
-    // 1) ui/text hooks
-    // 2) LOAD snapshot/settings (JSON-safe)
-    // 3) setupP5 creates fresh p5.Graphics layers
-    // 4) apply loaded actions into runtime layers + rebuild
+    // ✅ Ensure state is safe BEFORE anything else touches it
+    WB.ensureStateDefaults();
+
+    // init in your usual order
     WB.ui.init();
     WB.text.hookEditorEvents();
-
-    try { WB.storage.loadNow(); } catch(e){ console.warn("[app] storage.loadNow failed:", e); }
-
     WB.drawing.setupP5();
 
-    // New storage API (preferred)
-    if (typeof WB.storage.applyLoadedToRuntime === "function"){
-      try { WB.storage.applyLoadedToRuntime(); } catch(e){ console.warn("[app] applyLoadedToRuntime failed:", e); }
-    } else if (typeof WB.storage.applyLoadedLayersIfAny === "function"){
-      // backward compatibility with older name
-      try { WB.storage.applyLoadedLayersIfAny(); } catch(e){ console.warn("[app] applyLoadedLayersIfAny failed:", e); }
-    } else {
-      // fallback: old flow, still rebuild
-      try { WB.drawing.rebuildAllBuffers(); } catch(_) {}
-      try { WB.text.rebuildTextOverlay(); } catch(_) {}
-    }
+    // Load persisted state (may overwrite parts) => re-ensure containers afterwards
+    WB.storage.loadNow();
+    WB.ensureStateDefaults();
+
+    WB.drawing.rebuildAllBuffers();
+    WB.text.rebuildTextOverlay();
 
     // start with pointer tool (no tool)
     WB.drawing.setTool("pointer");
@@ -124,6 +194,8 @@
 
       // ignore if starting on UI
       if (WB.ui?.isPointerOverUIClient && WB.ui.isPointerOverUIClient(ev.clientX, ev.clientY)) return;
+
+      WB.ensureStateDefaults();
 
       WB.state.pointerDown = true;
       WB.state.activePointerId = ev.pointerId;
@@ -192,14 +264,11 @@
   };
 
   window.draw = function draw(){
-    // CRITICAL: if drawFrame throws once, your app looks "frozen" forever.
-    // So guard it and keep looping.
     try{
       WB.drawing.drawFrame();
     } catch(e){
       console.error("drawFrame crashed:", e);
       showFatal("drawFrame crashed:\n" + (e?.message || e) + "\n\nOpen DevTools Console for stack trace.");
-      // keep app alive
       WB.forceLoop();
     }
   };
