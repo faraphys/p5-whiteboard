@@ -52,7 +52,7 @@ WB.ui = {
     U.cursorHint = document.getElementById("cursorHint");
     U.toast = document.getElementById("toast");
 
-    // Shortcuts card content (NO save/open/export)
+    // Shortcuts card content (NO export, NO save/open)
     U.shortcutCard.innerHTML = `
       <div class="title">Shortcuts</div>
       <div class="row"><span><code>Esc</code></span><span>Pointer</span></div>
@@ -80,19 +80,34 @@ WB.ui = {
     document.addEventListener("pointerdown",(ev)=>{
       if(!U.colorSelect.contains(ev.target)) U.palette.classList.remove("open");
       if(!U.layersSelect.contains(ev.target)) U.layersMenu.classList.remove("open");
+      // shortcuts popover close
+      U.shortcutCard?.classList.remove("open");
     }, {capture:true});
 
     U.colorSelect.addEventListener("pointerdown",(ev)=>{
       ev.stopPropagation();
       U.layersMenu.classList.remove("open");
+      U.shortcutCard?.classList.remove("open");
       U.palette.classList.toggle("open");
     });
 
     U.layersSelect.addEventListener("pointerdown",(ev)=>{
       ev.stopPropagation();
       U.palette.classList.remove("open");
+      U.shortcutCard?.classList.remove("open");
       U.layersMenu.classList.toggle("open");
     });
+
+    // shortcuts popover
+    if (U.btnShortcuts && U.shortcutCard){
+      U.btnShortcuts.addEventListener("pointerdown",(ev)=>{
+        ev.stopPropagation();
+        U.palette.classList.remove("open");
+        U.layersMenu.classList.remove("open");
+        U.shortcutCard.classList.toggle("open");
+      });
+      U.shortcutCard.addEventListener("pointerdown",(ev)=>ev.stopPropagation());
+    }
 
     // toolbar cycle
     U.btnCycle.addEventListener("click",(ev)=>{
@@ -110,18 +125,6 @@ WB.ui = {
       U.glyphDark.textContent = S.darkMode ? "🔆" : "🌙";
       WB.storage.scheduleSave();
     });
-
-    // shortcuts popover
-    if (U.btnShortcuts && U.shortcutCard){
-      U.btnShortcuts.addEventListener("pointerdown",(ev)=>{
-        ev.stopPropagation();
-        U.shortcutCard.classList.toggle("open");
-      });
-      document.addEventListener("pointerdown",()=>{
-        U.shortcutCard.classList.remove("open");
-      }, {capture:true});
-      U.shortcutCard.addEventListener("pointerdown",(ev)=>ev.stopPropagation());
-    }
 
     // tools
     U.toolPen.addEventListener("click",()=> WB.drawing.setTool("pen"));
@@ -155,13 +158,14 @@ WB.ui = {
     WB.ui.updateLayersLabel();
 
     // start UI state
-    U.snap.checked = S.snapToGrid;
-    U.bgMode.value = S.bgMode;
-    U.colorChip.style.background = S.currentColor;
+    U.snap.checked = !!S.snapToGrid;
+    if (U.bgMode) U.bgMode.value = S.bgMode || "transparent";
+    if (U.colorChip) U.colorChip.style.background = S.currentColor || "#000000";
   },
 
   buildPalette(){
     const S=WB.state, U=S.ui;
+    if (!U.paletteGrid) return;
     U.paletteGrid.innerHTML="";
     for(const hex of WB.CONFIG.COLORS){
       const sw=document.createElement("div");
@@ -216,12 +220,12 @@ WB.ui = {
       o.textContent = `${s} pt`;
       U.textSizeEditor.appendChild(o);
     }
-    U.textSizeEditor.value = String(S.defaultTextSize);
+    U.textSizeEditor.value = String(S.defaultTextSize || 20);
 
     // initial values + dynamic labels
-    U.strokeWidth.value = String(S.strokeWidth);
-    U.smoothing.value = String(S.smoothing);
-    U.transp.value = String(S.transp);
+    U.strokeWidth.value = String(S.strokeWidth || 2);
+    U.smoothing.value = String(S.smoothing || 2);
+    U.transp.value = String(S.transp || 1);
     WB.ui.updateWidthLabel();
     WB.ui.updateSmoothLabel();
     WB.ui.updateTranspLabel();
@@ -253,6 +257,7 @@ WB.ui = {
 
   updateWidthLabel(){
     const U=WB.state.ui;
+    if (!U.strokeWidth) return;
     const opt = U.strokeWidth.options[U.strokeWidth.selectedIndex];
     opt.textContent = `↕ ${U.strokeWidth.value} pt`;
     for (const o of U.strokeWidth.options){
@@ -261,6 +266,7 @@ WB.ui = {
   },
   updateSmoothLabel(){
     const U=WB.state.ui;
+    if (!U.smoothing) return;
     const opt = U.smoothing.options[U.smoothing.selectedIndex];
     opt.textContent = `≈ ${U.smoothing.value}/10`;
     for (const o of U.smoothing.options){
@@ -269,6 +275,7 @@ WB.ui = {
   },
   updateTranspLabel(){
     const U=WB.state.ui;
+    if (!U.transp) return;
     const opt = U.transp.options[U.transp.selectedIndex];
     opt.textContent = `◌ ${U.transp.value}/10`;
     for (const o of U.transp.options){
@@ -278,20 +285,21 @@ WB.ui = {
 
   applyCollapse(){
     const S=WB.state, U=S.ui;
+    if (!U.root) return;
     U.root.classList.toggle("full", S.collapseState==="full");
     U.root.classList.toggle("partial", S.collapseState==="partial");
     U.root.classList.toggle("expanded", S.collapseState==="expanded");
-    U.glyphCycle.textContent = (S.collapseState==="expanded") ? "▴" : "▾";
+    if (U.glyphCycle) U.glyphCycle.textContent = (S.collapseState==="expanded") ? "▴" : "▾";
     if (S.collapseState==="full"){
-      U.palette.classList.remove("open");
-      U.layersMenu.classList.remove("open");
+      U.palette?.classList.remove("open");
+      U.layersMenu?.classList.remove("open");
       U.shortcutCard?.classList.remove("open");
     }
   },
 
   refreshToolButtons(){
     const S=WB.state, U=S.ui;
-    const set = (btn, on)=> btn.classList.toggle("active", on);
+    const set = (btn, on)=> btn && btn.classList.toggle("active", on);
 
     set(U.toolPen, S.tool==="pen");
     set(U.toolEraser, S.tool==="eraser");
@@ -304,6 +312,7 @@ WB.ui = {
 
   toast(msg){
     const U=WB.state.ui;
+    if (!U.toast) return;
     U.toast.textContent = msg;
     U.toast.classList.add("show");
     setTimeout(()=>U.toast.classList.remove("show"), 900);
@@ -311,6 +320,7 @@ WB.ui = {
 
   showCursorHint(text, ms=700){
     const S=WB.state, U=S.ui;
+    if (!U.cursorHint) return;
     U.cursorHint.textContent = text;
     U.cursorHint.style.left = (S.lastPointerClient.x + 12) + "px";
     U.cursorHint.style.top  = (S.lastPointerClient.y + 12) + "px";
@@ -320,6 +330,8 @@ WB.ui = {
 
   initDrag(){
     const S=WB.state, U=S.ui;
+    if (!U.dragHandle || !U.root) return;
+
     let dragging=false, startX=0,startY=0,startLeft=0,startTop=0;
 
     U.dragHandle.addEventListener("pointerdown",(ev)=>{
@@ -350,6 +362,7 @@ WB.ui = {
 
   rebuildLayersMenu(){
     const S=WB.state, U=S.ui;
+    if (!U.layersMenu) return;
     U.layersMenu.innerHTML="";
     for(let i=0;i<3;i++){
       const item=document.createElement("div");
@@ -374,6 +387,7 @@ WB.ui = {
 
   updateLayersLabel(){
     const S=WB.state, U=S.ui;
+    if (!U.layersLabel) return;
     const vis = S.layers[S.activeLayer]?.visible ? "on" : "off";
     U.layersLabel.textContent = `🧱 Layers (${S.activeLayer+1}:${vis})`;
   },
