@@ -264,7 +264,8 @@
 </head>
 
 <body>
-  <div id="ui" class="partial">
+  <!-- CHANGED: start fully collapsed -->
+  <div id="ui" class="full">
     <div id="dragHandle" title="Drag toolbar">
       <div class="dots" aria-hidden="true">
         <span></span><span></span><span></span>
@@ -749,7 +750,6 @@ function deleteSelection(){
   const L=layers[activeLayer];
   const idxs = lasso.selectedIdx.slice().sort((a,b)=>b-a);
   for(const idx of idxs) L.actions.splice(idx,1);
-  // keep things simple: remove stored fills if structure changed
   L.actions = L.actions.filter(a => a.type !== "fill");
 
   clearSelection();
@@ -1711,7 +1711,7 @@ let snapEl, undoBtn, clearBtn;
 let colorSelect, palette, paletteGrid, colorChip;
 let layersSelect, layersMenu, layersLabel;
 
-let collapseState = "partial";
+let collapseState = "full"; // CHANGED: default state is fully collapsed
 
 function initUI(){
   ui=document.getElementById("ui");
@@ -1831,7 +1831,7 @@ function initUI(){
   rebuildLayersMenu();
   updateLayersLabel();
 
-  applyCollapseState();
+  applyCollapseState(); // will now apply "full" initially
   initDrag();
 
   document.getElementById("btnShortcuts").addEventListener("click",(e)=>e.preventDefault());
