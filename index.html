@@ -7,7 +7,6 @@
 
   <!-- External libs (DEFER for deterministic order) -->
   <script defer src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
-  <script defer src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <!-- MathJax -->
   <script>
@@ -130,9 +129,7 @@
 
       <button id="btnSaveJson" title="Save drawing as .wb.json">Save...</button>
       <button id="btnOpenJson" title="Open a .wb.json drawing">Open...</button>
-                <input id="fileOpenJson" type="file" accept=".json,.wb.json,application/json" style="display:none" />
-                <script src="./io.js"></script>
-
+      <input id="fileOpenJson" type="file" accept=".json,.wb.json,application/json" style="display:none" />
     </div>
   </div>
 
@@ -151,7 +148,7 @@
   <div id="canvas-outline"></div>
   <div id="text-overlay"></div>
   <div id="cursorHint"></div>
-  <div id="toast">Copied to clipboard</div>
+  <div id="toast"></div>
 
   <!-- ===== App modules (DEFER, ordered) ===== -->
   <script defer src="config.js"></script>
@@ -161,8 +158,8 @@
   <script defer src="drawing.js"></script>
   <script defer src="lasso.js"></script>
   <script defer src="text.js"></script>
-  <script defer src="export.js"></script>
   <script defer src="storage.js"></script>
+  <script defer src="io.js"></script>
   <script defer src="app.js"></script>
 
 </body>
