@@ -1,0 +1,433 @@
+window.WB = window.WB || {};
+
+WB.ui = {
+  init(){
+    const S = WB.state;
+    const U = (S.ui = {});
+
+    U.root = document.getElementById("ui");
+    U.dragHandle = document.getElementById("dragHandle");
+    U.btnCycle = document.getElementById("btnCycle");
+    U.glyphCycle = document.getElementById("glyphCycle");
+    U.btnDark = document.getElementById("btnDark");
+    U.glyphDark = document.getElementById("glyphDark");
+    U.btnShortcuts = document.getElementById("btnShortcuts");
+    U.shortcutCard = document.getElementById("shortcutCard");
+
+    U.toolPen = document.getElementById("toolPen");
+    U.toolEraser = document.getElementById("toolEraser");
+    U.toolHighlighter = document.getElementById("toolHighlighter");
+    U.shapeTool = document.getElementById("shapeTool");
+    U.toolFill = document.getElementById("toolFill");
+    U.toolText = document.getElementById("toolText");
+    U.toolLaser = document.getElementById("toolLaser");
+    U.toolLasso = document.getElementById("toolLasso");
+
+    U.colorSelect = document.getElementById("colorSelect");
+    U.palette = document.getElementById("palette");
+    U.paletteGrid = document.getElementById("paletteGrid");
+    U.colorChip = document.getElementById("colorChip");
+
+    U.strokeWidth = document.getElementById("strokeWidth");
+    U.smoothing = document.getElementById("smoothing");
+    U.transp = document.getElementById("transp");
+    U.bgMode = document.getElementById("bgMode");
+    U.snap = document.getElementById("snap");
+
+    U.layersSelect = document.getElementById("layersSelect");
+    U.layersMenu = document.getElementById("layersMenu");
+    U.layersLabel = document.getElementById("layersLabel");
+
+    U.undo = document.getElementById("undo");
+    U.clear = document.getElementById("clear");
+
+    // NEW: Save/Open JSON
+    U.saveBtn = document.getElementById("btnSaveJson");
+    U.openBtn = document.getElementById("btnOpenJson");
+    U.openFile = document.getElementById("fileOpenJson");
+
+    U.textEditor = document.getElementById("textEditor");
+    U.textEditorTitle = document.getElementById("textEditorTitle");
+    U.textSizeEditor = document.getElementById("textSizeEditor");
+    U.textInput = document.getElementById("textInput");
+
+    U.cursorHint = document.getElementById("cursorHint");
+    U.toast = document.getElementById("toast");
+
+    // Shortcuts card content (export shortcuts removed; add save/open)
+    U.shortcutCard.innerHTML = `
+      <div class="title">Shortcuts</div>
+      <div class="row"><span><code>Esc</code></span><span>Pointer</span></div>
+      <div class="row"><span><code>P</code></span><span>Pen</span></div>
+      <div class="row"><span><code>E</code></span><span>Eraser</span></div>
+      <div class="row"><span><code>H</code></span><span>Highlighter</span></div>
+      <div class="row"><span><code>S</code></span><span>Cycle Shapes</span></div>
+      <div class="row"><span><code>G</code></span><span>Cycle Grid</span></div>
+      <div class="row"><span><code>N</code></span><span>Snap on/off</span></div>
+      <div class="row"><span><code>F</code></span><span>Fill</span></div>
+      <div class="row"><span><code>T</code></span><span>Text</span></div>
+      <div class="row"><span><code>L</code></span><span>Lasso</span></div>
+      <div class="row"><span><code>R</code></span><span>Laser</span></div>
+      <div class="row"><span><code>Shift</code></span><span>Align line/arrow</span></div>
+      <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
+      <div class="row"><span><code>Del</code></span><span>Delete selection</span></div>
+      <div class="row"><span><code>1..9</code></span><span>Width</span></div>
+      <div class="row"><span><code>Ctrl+S</code></span><span>Save JSON</span></div>
+      <div class="row"><span><code>Ctrl+O</code></span><span>Open JSON</span></div>
+    `;
+
+    // palette + selects
+    WB.ui.buildPalette();
+    WB.ui.buildSelects();
+
+    // events: popups close
+    document.addEventListener("pointerdown",(ev)=>{
+      if(!U.colorSelect.contains(ev.target)) U.palette.classList.remove("open");
+      if(!U.layersSelect.contains(ev.target)) U.layersMenu.classList.remove("open");
+    }, {capture:true});
+
+    U.colorSelect.addEventListener("pointerdown",(ev)=>{
+      ev.stopPropagation();
+      U.layersMenu.classList.remove("open");
+      U.palette.classList.toggle("open");
+    });
+
+    U.layersSelect.addEventListener("pointerdown",(ev)=>{
+      ev.stopPropagation();
+      U.palette.classList.remove("open");
+      U.layersMenu.classList.toggle("open");
+    });
+
+    // toolbar cycle
+    U.btnCycle.addEventListener("click",(ev)=>{
+      ev.stopPropagation();
+      S.collapseState = (S.collapseState==="full") ? "partial" : (S.collapseState==="partial") ? "expanded" : "full";
+      WB.ui.applyCollapse();
+      WB.storage.scheduleSave();
+    });
+
+    // dark mode
+    U.btnDark.addEventListener("click",(ev)=>{
+      ev.stopPropagation();
+      S.darkMode = !S.darkMode;
+      document.body.classList.toggle("dark", S.darkMode);
+      U.glyphDark.textContent = S.darkMode ? "🔆" : "🌙";
+      WB.storage.scheduleSave();
+    });
+
+    // shortcuts popover (if you had a click/hover elsewhere, keep it; otherwise leave as-is)
+    if (U.btnShortcuts && U.shortcutCard){
+      U.btnShortcuts.addEventListener("pointerdown",(ev)=>{
+        ev.stopPropagation();
+        U.shortcutCard.classList.toggle("open");
+      });
+      document.addEventListener("pointerdown",()=>{
+        U.shortcutCard.classList.remove("open");
+      }, {capture:true});
+      U.shortcutCard.addEventListener("pointerdown",(ev)=>ev.stopPropagation());
+    }
+
+    // tools
+    U.toolPen.addEventListener("click",()=> WB.drawing.setTool("pen"));
+    U.toolEraser.addEventListener("click",()=> WB.drawing.setTool("eraser"));
+    U.toolHighlighter.addEventListener("click",()=> WB.drawing.setTool("highlighter"));
+    U.toolFill.addEventListener("click",()=> WB.drawing.setTool("fill"));
+    U.toolText.addEventListener("click",()=> WB.drawing.setTool("text"));
+    U.toolLaser.addEventListener("click",()=> WB.drawing.setTool("laser"));
+    U.toolLasso.addEventListener("click",()=> WB.drawing.setTool("lasso"));
+
+    U.shapeTool.addEventListener("input",()=> WB.drawing.setTool(U.shapeTool.value));
+    U.shapeTool.addEventListener("change",()=> WB.drawing.setTool(U.shapeTool.value));
+
+    U.bgMode.addEventListener("change",()=>{
+      S.bgMode = U.bgMode.value;
+      WB.storage.scheduleSave();
+    });
+
+    U.snap.addEventListener("change",()=>{
+      S.snapToGrid = U.snap.checked;
+      WB.storage.scheduleSave();
+    });
+
+    U.undo.addEventListener("click",()=>{ WB.lasso.clearSelection(); WB.drawing.undoActiveLayer(); });
+    U.clear.addEventListener("click",()=> WB.drawing.clearActiveLayerUndoable());
+
+    // NEW: Save/Open JSON buttons
+    if (U.saveBtn){
+      U.saveBtn.addEventListener("click", async ()=>{
+        try{
+          if (!WB.io || !WB.io.saveAsJson) throw new Error("WB.io.saveAsJson missing (include io.js)");
+          await WB.io.saveAsJson();
+          WB.ui.toast("Saved .wb.json");
+        }catch(e){
+          console.error(e);
+          alert("Save failed (maybe blocked when embedded).");
+        }
+      });
+    }
+
+    if (U.openBtn && U.openFile){
+      U.openBtn.addEventListener("click",()=> U.openFile.click());
+      U.openFile.addEventListener("change", async ()=>{
+        const file = U.openFile.files && U.openFile.files[0];
+        U.openFile.value = "";
+        if(!file) return;
+        try{
+          if (!WB.io || !WB.io.openJsonFromFile) throw new Error("WB.io.openJsonFromFile missing (include io.js)");
+          await WB.io.openJsonFromFile(file);
+          WB.ui.toast("Loaded .wb.json");
+        }catch(e){
+          console.error(e);
+          alert("Open failed.");
+        }
+      });
+    }
+
+    // Keyboard shortcuts: Ctrl+S / Ctrl+O
+    document.addEventListener("keydown",(ev)=>{
+      const key = (ev.key || "").toLowerCase();
+      if ((ev.ctrlKey || ev.metaKey) && key==="s"){
+        ev.preventDefault();
+        U.saveBtn?.click();
+      }
+      if ((ev.ctrlKey || ev.metaKey) && key==="o"){
+        ev.preventDefault();
+        U.openBtn?.click();
+      }
+    });
+
+    WB.ui.initDrag();
+    WB.ui.applyCollapse();
+    WB.ui.refreshToolButtons();
+    WB.ui.rebuildLayersMenu();
+    WB.ui.updateLayersLabel();
+
+    // start UI state
+    U.snap.checked = S.snapToGrid;
+    U.bgMode.value = S.bgMode;
+    U.colorChip.style.background = S.currentColor;
+  },
+
+  buildPalette(){
+    const S=WB.state, U=S.ui;
+    U.paletteGrid.innerHTML="";
+    for(const hex of WB.CONFIG.COLORS){
+      const sw=document.createElement("div");
+      sw.className="swatch";
+      sw.style.background=hex;
+      sw.addEventListener("pointerdown",(ev)=>{
+        ev.stopPropagation();
+        S.currentColor=hex;
+        U.colorChip.style.background=hex;
+        U.palette.classList.remove("open");
+        WB.storage.scheduleSave();
+      });
+      U.paletteGrid.appendChild(sw);
+    }
+  },
+
+  buildSelects(){
+    const S=WB.state, U=S.ui;
+
+    // width mapping 1..9 aligns with shortcuts
+    const widths=[1,2,3,4,5,8,10,20,30];
+    U.strokeWidth.innerHTML="";
+    for(const v of widths){
+      const o=document.createElement("option");
+      o.value=String(v);
+      o.textContent = `${v} pt`;
+      U.strokeWidth.appendChild(o);
+    }
+
+    U.smoothing.innerHTML="";
+    for(let v=1; v<=10; v++){
+      const o=document.createElement("option");
+      o.value=String(v);
+      o.textContent = `${v}`;
+      U.smoothing.appendChild(o);
+    }
+
+    U.transp.innerHTML="";
+    for(let v=1; v<=10; v++){
+      const o=document.createElement("option");
+      o.value=String(v);
+      o.textContent = `${v}`;
+      U.transp.appendChild(o);
+    }
+
+    // text sizes
+    const sizes=[10,12,14,16,20,24,28,36,48,72];
+    U.textSizeEditor.innerHTML="";
+    for(const s of sizes){
+      const o=document.createElement("option");
+      o.value=String(s);
+      o.textContent = `${s} pt`;
+      U.textSizeEditor.appendChild(o);
+    }
+    U.textSizeEditor.value = String(S.defaultTextSize);
+
+    // initial values + dynamic labels
+    U.strokeWidth.value = String(S.strokeWidth);
+    U.smoothing.value = String(S.smoothing);
+    U.transp.value = String(S.transp);
+    WB.ui.updateWidthLabel();
+    WB.ui.updateSmoothLabel();
+    WB.ui.updateTranspLabel();
+
+    U.strokeWidth.addEventListener("change",()=>{
+      S.strokeWidth = parseInt(U.strokeWidth.value,10);
+      if(S.tool!=="eraser") S.lastNonEraserWidth = S.strokeWidth;
+      WB.ui.updateWidthLabel();
+      WB.storage.scheduleSave();
+    });
+    U.smoothing.addEventListener("change",()=>{
+      S.smoothing = parseInt(U.smoothing.value,10);
+      WB.ui.updateSmoothLabel();
+      WB.storage.scheduleSave();
+    });
+    U.transp.addEventListener("change",()=>{
+      S.transp = parseInt(U.transp.value,10);
+      WB.ui.updateTranspLabel();
+      WB.storage.scheduleSave();
+    });
+
+    U.textSizeEditor.addEventListener("change",()=>{
+      const v = parseInt(U.textSizeEditor.value,10);
+      S.defaultTextSize = v;
+      if (S.textDraft) S.textDraft.size = v;
+      WB.storage.scheduleSave();
+    });
+  },
+
+  updateWidthLabel(){
+    const U=WB.state.ui;
+    const opt = U.strokeWidth.options[U.strokeWidth.selectedIndex];
+    opt.textContent = `↕ ${U.strokeWidth.value} pt`;
+    for (const o of U.strokeWidth.options){
+      if (o !== opt) o.textContent = `${o.value} pt`;
+    }
+  },
+  updateSmoothLabel(){
+    const U=WB.state.ui;
+    const opt = U.smoothing.options[U.smoothing.selectedIndex];
+    opt.textContent = `≈ ${U.smoothing.value}/10`;
+    for (const o of U.smoothing.options){
+      if (o !== opt) o.textContent = `${o.value}`;
+    }
+  },
+  updateTranspLabel(){
+    const U=WB.state.ui;
+    const opt = U.transp.options[U.transp.selectedIndex];
+    opt.textContent = `◌ ${U.transp.value}/10`;
+    for (const o of U.transp.options){
+      if (o !== opt) o.textContent = `${o.value}`;
+    }
+  },
+
+  applyCollapse(){
+    const S=WB.state, U=S.ui;
+    U.root.classList.toggle("full", S.collapseState==="full");
+    U.root.classList.toggle("partial", S.collapseState==="partial");
+    U.root.classList.toggle("expanded", S.collapseState==="expanded");
+    U.glyphCycle.textContent = (S.collapseState==="expanded") ? "▴" : "▾";
+    if (S.collapseState==="full"){
+      U.palette.classList.remove("open");
+      U.layersMenu.classList.remove("open");
+      U.shortcutCard?.classList.remove("open");
+    }
+  },
+
+  refreshToolButtons(){
+    const S=WB.state, U=S.ui;
+    const set = (btn, on)=> btn.classList.toggle("active", on);
+
+    set(U.toolPen, S.tool==="pen");
+    set(U.toolEraser, S.tool==="eraser");
+    set(U.toolHighlighter, S.tool==="highlighter");
+    set(U.toolFill, S.tool==="fill");
+    set(U.toolText, S.tool==="text");
+    set(U.toolLaser, S.tool==="laser");
+    set(U.toolLasso, S.tool==="lasso");
+  },
+
+  toast(msg){
+    const U=WB.state.ui;
+    U.toast.textContent = msg;
+    U.toast.classList.add("show");
+    setTimeout(()=>U.toast.classList.remove("show"), 900);
+  },
+
+  showCursorHint(text, ms=700){
+    const S=WB.state, U=S.ui;
+    U.cursorHint.textContent = text;
+    U.cursorHint.style.left = (S.lastPointerClient.x + 12) + "px";
+    U.cursorHint.style.top  = (S.lastPointerClient.y + 12) + "px";
+    U.cursorHint.classList.add("show");
+    setTimeout(()=>U.cursorHint.classList.remove("show"), ms);
+  },
+
+  initDrag(){
+    const S=WB.state, U=S.ui;
+    let dragging=false, startX=0,startY=0,startLeft=0,startTop=0;
+
+    U.dragHandle.addEventListener("pointerdown",(ev)=>{
+      if (ev.target.closest("button")) return;
+      dragging=true;
+      U.dragHandle.setPointerCapture(ev.pointerId);
+      startX=ev.clientX; startY=ev.clientY;
+      const rect=U.root.getBoundingClientRect();
+      startLeft=rect.left; startTop=rect.top;
+      U.root.style.left=`${startLeft}px`;
+      U.root.style.top=`${startTop}px`;
+      U.root.style.right="auto";
+    });
+
+    U.dragHandle.addEventListener("pointermove",(ev)=>{
+      if(!dragging) return;
+      const dx=ev.clientX-startX, dy=ev.clientY-startY;
+      const rect=U.root.getBoundingClientRect();
+      const w=rect.width, h=rect.height;
+      const nl=WB.utils.clamp(startLeft+dx, 8, window.innerWidth-w-8);
+      const nt=WB.utils.clamp(startTop+dy, 8, window.innerHeight-h-8);
+      U.root.style.left=`${nl}px`;
+      U.root.style.top=`${nt}px`;
+    });
+
+    U.dragHandle.addEventListener("pointerup",()=>{ dragging=false; });
+  },
+
+  rebuildLayersMenu(){
+    const S=WB.state, U=S.ui;
+    U.layersMenu.innerHTML="";
+    for(let i=0;i<3;i++){
+      const item=document.createElement("div");
+      item.className="layer-item" + (S.layers[i]?.visible ? "" : " invisible");
+      item.textContent = `Layer ${i+1}` + (i===S.activeLayer ? " ✓" : "");
+      item.addEventListener("pointerdown",(ev)=>{
+        ev.stopPropagation();
+        if (S.activeLayer !== i) S.activeLayer = i;
+        else S.layers[i].visible = !S.layers[i].visible;
+
+        WB.lasso.clearSelection();
+        WB.drawing.rebuildAllBuffers();
+        WB.text.rebuildTextOverlay();
+        WB.ui.updateLayersLabel();
+        WB.ui.rebuildLayersMenu();
+        U.layersMenu.classList.remove("open");
+        WB.storage.scheduleSave();
+      });
+      U.layersMenu.appendChild(item);
+    }
+  },
+
+  updateLayersLabel(){
+    const S=WB.state, U=S.ui;
+    const vis = S.layers[S.activeLayer]?.visible ? "on" : "off";
+    U.layersLabel.textContent = `🧱 Layers (${S.activeLayer+1}:${vis})`;
+  },
+
+  isPointerOverUIClient(clientX, clientY){
+    const rect = WB.state.ui.root.getBoundingClientRect();
+    return clientX>=rect.left && clientX<=rect.right && clientY>=rect.top && clientY<=rect.bottom;
+  }
+};
