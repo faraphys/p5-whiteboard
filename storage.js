@@ -1,6 +1,22 @@
 window.WB = window.WB || {};
 
 WB.storage = {
+  // Are we running inside an iframe?
+  isEmbedded(){
+    try { return window.top !== window.self; } catch(_) { return true; }
+  },
+
+  // Simple deterministic hash -> short id (for referrer-based page ids)
+  hashStr(str){
+    // djb2-ish
+    let h = 5381;
+    for (let i = 0; i < str.length; i++){
+      h = ((h << 5) + h) ^ str.charCodeAt(i);
+    }
+    // unsigned + base36
+    return (h >>> 0).toString(36);
+  },
+
   hasExplicitPage(){
     const params = new URLSearchParams(location.search);
     if (params.has("page") || params.has("p")) return true;
@@ -8,28 +24,27 @@ WB.storage = {
     return false;
   },
 
+  // IMPORTANT: pageId must be STABLE across iframe re-creation (slides.com navigation).
   pageId(){
     const params = new URLSearchParams(location.search);
-    return params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "default");
-  },
+    const explicit = params.get("page") || params.get("p") || (location.hash ? location.hash.slice(1) : "");
+    if (explicit) return explicit;
 
-  sessionIdIfNeeded(){
-    // ONLY create per-tab ID if there is NO explicit page id
-    if (WB.storage.hasExplicitPage()) return null;
-
-    let sid = sessionStorage.getItem("wb_session_id");
-    if (!sid){
-      sid = String(Date.now()) + "_" + Math.random().toString(16).slice(2);
-      sessionStorage.setItem("wb_session_id", sid);
+    // If embedded (slides.com), use referrer as a stable per-slide seed.
+    // Typically referrer encodes deck + slide location, and stays constant for the embedded instance.
+    if (WB.storage.isEmbedded()){
+      const ref = (document.referrer || "").trim();
+      if (ref) return "ref_" + WB.storage.hashStr(ref);
     }
-    return sid;
+
+    return "default";
   },
 
   key(){
-    const base = `p5_whiteboard_split_v1::${location.origin}${location.pathname}`;
+    // Keep key stable per hosted path + derived pageId
+    const base = `p5_whiteboard_split_v2::${location.origin}${location.pathname}`;
     const pid  = `page=${WB.storage.pageId()}`;
-    const sid  = WB.storage.sessionIdIfNeeded();
-    return sid ? `${base}::${sid}::${pid}` : `${base}::${pid}`;
+    return `${base}::${pid}`;
   },
 
   _timer: null,
@@ -43,14 +58,14 @@ WB.storage = {
     const S = WB.state;
     try{
       const payload = {
-        version: "split_v1",
+        version: "split_v2",
         page: WB.storage.pageId(),
-
-        // keep it generic: store everything your app already stores
         state: S
       };
       localStorage.setItem(WB.storage.key(), JSON.stringify(payload));
-    } catch(e) {}
+    } catch(e) {
+      // ignore (can fail in some embedded contexts)
+    }
   },
 
   loadNow(){
@@ -59,10 +74,12 @@ WB.storage = {
       if (!raw) return;
 
       const data = JSON.parse(raw);
-      if (!data || data.version !== "split_v1" || !data.state) return;
+      if (!data || (data.version !== "split_v1" && data.version !== "split_v2") || !data.state) return;
 
-      // merge onto existing WB.state to avoid missing defaults
+      // Merge onto existing WB.state to keep defaults + existing object refs alive
       WB.state = Object.assign(WB.state, data.state);
-    } catch(e) {}
+    } catch(e) {
+      // ignore
+    }
   }
 };
