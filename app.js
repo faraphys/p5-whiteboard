@@ -1,4 +1,5 @@
 // app.js — updated to diagnose and prevent "freeze after selecting Shapes"
+// PATCHED: robust persistence across slide changes (load BEFORE setupP5, then apply AFTER)
 
 (function(){
   // simple overlay to show errors without opening DevTools
@@ -81,21 +82,32 @@
 
   // ---- p5 entry points ----
   window.setup = function setup(){
-    // init in your usual order
+    // init in correct order for persistence:
+    // 1) ui/text hooks
+    // 2) LOAD snapshot/settings (JSON-safe)
+    // 3) setupP5 creates fresh p5.Graphics layers
+    // 4) apply loaded actions into runtime layers + rebuild
     WB.ui.init();
     WB.text.hookEditorEvents();
+
+    try { WB.storage.loadNow(); } catch(e){ console.warn("[app] storage.loadNow failed:", e); }
+
     WB.drawing.setupP5();
 
-    WB.storage.loadNow();
-    WB.storage.applyLoadedLayersIfAny?.();
-
-    WB.drawing.rebuildAllBuffers();
-    WB.text.rebuildTextOverlay();
-    WB.drawing.setTool("pointer");
+    // New storage API (preferred)
+    if (typeof WB.storage.applyLoadedToRuntime === "function"){
+      try { WB.storage.applyLoadedToRuntime(); } catch(e){ console.warn("[app] applyLoadedToRuntime failed:", e); }
+    } else if (typeof WB.storage.applyLoadedLayersIfAny === "function"){
+      // backward compatibility with older name
+      try { WB.storage.applyLoadedLayersIfAny(); } catch(e){ console.warn("[app] applyLoadedLayersIfAny failed:", e); }
+    } else {
+      // fallback: old flow, still rebuild
+      try { WB.drawing.rebuildAllBuffers(); } catch(_) {}
+      try { WB.text.rebuildTextOverlay(); } catch(_) {}
+    }
 
     // start with pointer tool (no tool)
     WB.drawing.setTool("pointer");
-
     WB.forceLoop();
 
     const canvasEl = document.querySelector("canvas");
