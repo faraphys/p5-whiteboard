@@ -1,163 +1,562 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>p5 Whiteboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>p5 Whiteboard (single-file)</title>
 
-  <!-- External libs (DEFER for deterministic order) -->
-  <script defer src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.2/lib/p5.min.js"></script>
 
-  <!-- MathJax -->
-  <script>
-    window.MathJax = {
-      tex: {
-        packages: { '[+]': ['ams'] },
-        inlineMath: [['$', '$'], ['\\(', '\\)']],
-        displayMath: [['$$','$$'], ['\\[','\\]']]
-      },
-      svg: { fontCache: 'global' }
-    };
-  </script>
-  <script defer src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>
+  <style>
+    :root{
+      --panel: rgba(255,255,255,0.92);
+      --border: rgba(0,0,0,0.12);
+      --text: rgba(0,0,0,0.86);
+      --shadow: 0 6px 18px rgba(0,0,0,0.10);
+      --radius: 12px;
+      --outline: rgba(140,140,140,0.22);
+      --font: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+    }
+    body.dark{
+      --panel: rgba(20,20,20,0.90);
+      --border: rgba(255,255,255,0.14);
+      --text: rgba(255,255,255,0.92);
+      --shadow: 0 10px 26px rgba(0,0,0,0.50);
+      --outline: rgba(220,220,220,0.20);
+      background:#000;
+    }
+    html,body{ margin:0; height:100%; overflow:hidden; font-family:var(--font); background:transparent; }
 
-  <link rel="stylesheet" href="styles.css"/>
+    #canvas-wrap{ position:fixed; inset:0; z-index:1; }
+    #canvas-outline{ position:fixed; inset:0; border:1px solid var(--outline); pointer-events:none; z-index:2; }
+
+    #ui{
+      position:fixed; top:10px; right:10px; z-index:10;
+      width:170px; max-width: calc(100vw - 20px);
+      box-sizing:border-box;
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:var(--radius);
+      box-shadow:var(--shadow);
+      padding:8px;
+      user-select:none;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      color:var(--text);
+    }
+
+    .row{ display:flex; gap:6px; }
+    .row + .row{ margin-top:6px; }
+
+    button, select, input[type="color"]{
+      border:1px solid var(--border);
+      background:rgba(255,255,255,0.88);
+      color:var(--text);
+      border-radius:12px;
+      padding:7px 10px;
+      font-size:12px;
+      cursor:pointer;
+      box-sizing:border-box;
+    }
+    body.dark button, body.dark select, body.dark input[type="color"]{
+      background:rgba(30,30,30,0.92);
+    }
+
+    button.tool{
+      width:100%;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      gap:6px;
+      border-radius:999px;
+    }
+    button.tool.active{
+      background:rgba(0,0,0,0.92);
+      border-color:rgba(0,0,0,0.92);
+      color:#fff;
+    }
+    body.dark button.tool.active{
+      background:rgba(255,255,255,0.92);
+      border-color:rgba(255,255,255,0.92);
+      color:#111;
+    }
+
+    .mini{
+      width:32px; height:32px; padding:0;
+      display:flex; align-items:center; justify-content:center;
+      border-radius:999px;
+    }
+
+    #toast{
+      position:fixed; right:18px; bottom:18px; z-index:999999;
+      background:rgba(0,0,0,0.82); color:white;
+      padding:10px 12px; border-radius:12px;
+      font-size:12px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.22);
+      opacity:0; transform: translateY(10px);
+      pointer-events:none;
+      transition: opacity 180ms ease, transform 180ms ease;
+    }
+    #toast.show{ opacity:1; transform: translateY(0); }
+    body.dark #toast{ background:rgba(255,255,255,0.90); color:#111; }
+
+    #fatal{
+      position:fixed; left:10px; right:10px; bottom:10px; z-index:999999;
+      background:rgba(0,0,0,0.82); color:#fff;
+      padding:10px; border-radius:12px;
+      font:12px/1.35 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      white-space:pre-wrap;
+      display:none;
+    }
+  </style>
 </head>
 
 <body>
-
-  <!-- ===== Toolbar (MUST exist for ui.js) ===== -->
-  <div id="ui" class="partial">
-    <div id="dragHandle" title="Drag toolbar">
-      <div class="dots" aria-hidden="true">
-        <span></span><span></span><span></span>
-        <span></span><span></span><span></span>
-      </div>
-
-      <div class="handleBtns">
-        <div class="shortcutWrap">
-          <button id="btnShortcuts" class="miniBtn" title="Shortcuts">⌨</button>
-          <div id="shortcutCard"></div>
-        </div>
-
-        <button id="btnDark" class="miniBtn" title="Toggle dark mode">
-          <span id="glyphDark">🌙</span>
-        </button>
-
-        <button id="btnCycle" class="miniBtn" title="Cycle toolbar">
-          <span id="glyphCycle">▾</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- CORE -->
-    <div class="core">
-      <button class="tool" id="toolPen"><span class="ico">✎</span><span>Pen</span></button>
-      <button class="tool" id="toolEraser"><span class="ico">🧽</span><span>Eraser</span></button>
-      <button class="tool" id="toolHighlighter" title="Highlighter (line)">
-        <span class="ico">🖍️</span><span>Highlighter</span>
-      </button>
-
-      <select id="shapeTool" title="Shapes">
-        <option value="" disabled selected>◯  Shapes</option>
-        <option value="line">—  Line</option>
-        <option value="arrow">➤  Arrow</option>
-        <option value="circle">◯  Circle</option>
-        <option value="rect">▭  Rect</option>
-        <option value="ellipse">⬭  Ellipse (e=0.9)</option>
-      </select>
-
-      <div class="color-select" id="colorSelect" title="Color">
-        <div class="color-left">
-          <div class="chip" id="colorChip"></div>
-          <div class="label">🎨 Color</div>
-        </div>
-        <div class="caret">▾</div>
-        <div class="palette" id="palette">
-          <div class="palette-grid" id="paletteGrid"></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ADVANCED -->
-    <div class="advanced">
-      <select id="strokeWidth" title="Line width"></select>
-      <select id="smoothing" title="Free draw line smoothing (1 = none)"></select>
-      <select id="transp" title="Transparency (1=opaque, 10=almost invisible)"></select>
-
-      <button class="tool" id="toolFill" title="Fill (uses selected Color + Transp.)">
-        <span class="ico">🪣</span><span>Fill</span>
-      </button>
-
-      <button class="tool" id="toolText" title="Text tool">
-        <span class="ico">T</span><span>Text / LaTeX</span>
-      </button>
-
-      <button class="tool" id="toolLaser" title="Laser (uses current color + width)">
-        <span class="ico red">◎</span><span>Laser</span>
-      </button>
-
-      <button class="tool" id="toolLasso" title="Lasso select & transform">
-        <span class="ico">⟲</span><span>Lasso</span>
-      </button>
-
-      <select id="bgMode" title="Background (G)">
-        <option value="transparent" selected>▦  Bg: transp.</option>
-        <option value="dots">•  Bg: dots</option>
-        <option value="grid">⧉  Bg: grid</option>
-      </select>
-
-      <label class="pill" title="Snap to grid (N)">
-        <input id="snap" type="checkbox" />
-        ⌗  Snap
-      </label>
-
-      <div class="layers-select" id="layersSelect"
-           title="Click: select layer. Click same layer again: toggle visibility.">
-        <div id="layersLabel" class="label">🧱 Layers</div>
-        <div class="caret">▾</div>
-        <div class="layers-menu" id="layersMenu"></div>
-      </div>
-
-      <button class="action" id="undo" title="Undo (active layer)">
-        <span class="ico">↶</span><span>Undo</span>
-      </button>
-
-      <button class="action" id="clear" title="Clear active layer (undoable)">
-        <span class="ico">🗑</span><span>Clear layer</span>
-      </button>
-
-    </div>
-  </div>
-
-  <!-- ===== Text editor popup (MUST exist for text.js/ui.js) ===== -->
-  <div id="textEditor">
-    <div id="textEditorTop">
-      <div id="textEditorTitle">Enter text (LaTex syntax supported)</div>
-      <select id="textSizeEditor" title="Font size"></select>
-    </div>
-    <textarea id="textInput" spellcheck="false"></textarea>
-    <div id="textHint">e.g. <code>velocity $v_x$</code>. Ctrl+Enter = commit. Esc = cancel.</div>
-  </div>
-
-  <!-- ===== Canvas + overlays ===== -->
   <div id="canvas-wrap"></div>
   <div id="canvas-outline"></div>
-  <div id="text-overlay"></div>
-  <div id="cursorHint"></div>
+
+  <div id="ui">
+    <div class="row">
+      <button id="btnDark" class="mini" title="Dark mode">🌙</button>
+      <button id="btnUndo" style="flex:1" title="Undo (Ctrl+Z)">↶ Undo</button>
+      <button id="btnClear" style="flex:1" title="Clear">🗑 Clear</button>
+    </div>
+
+    <div class="row">
+      <button id="toolPen" class="tool">✎ Pen</button>
+      <button id="toolEraser" class="tool">🧽 Eraser</button>
+      <button id="toolHighlighter" class="tool" title="Yellow highlighter">🖍 Highl.</button>
+    </div>
+
+    <div class="row">
+      <input id="color" type="color" title="Color" style="width:46px; padding:0; height:32px;">
+      <select id="width" title="Width" style="flex:1"></select>
+      <select id="alpha" title="Opacity" style="flex:1"></select>
+    </div>
+
+    <div class="row">
+      <div style="font-size:11px; opacity:.75; line-height:1.2;">
+        Persist key: <code id="keyHint"></code>
+      </div>
+    </div>
+  </div>
+
   <div id="toast"></div>
+  <div id="fatal"></div>
 
-  <!-- ===== App modules (DEFER, ordered) ===== -->
-  <script defer src="config.js"></script>
-  <script defer src="state.js"></script>
-  <script defer src="utils.js"></script>
-  <script defer src="ui.js"></script>
-  <script defer src="drawing.js"></script>
-  <script defer src="lasso.js"></script>
-  <script defer src="text.js"></script>
-  <script defer src="storage.js"></script>
-  <script defer src="io.js"></script>
-  <script defer src="app.js"></script>
+<script>
+/* ============================================================
+   Single-file, reduced p5 whiteboard with reliable persistence
+   - NO save/open/export
+   - Immediate save on stroke end + pagehide/visibilitychange
+   - Per-page persistence via ?page=... (or hash)
+   ============================================================ */
 
+(function(){
+  const COLORS_FALLBACK = ["#111111","#D7263D","#009E73","#0072B2","#FFFFFF","#FF8A00","#FFFF00"];
+  const WIDTHS = [1,2,3,4,5,8,10,16,24,30];
+  const ALPHAS = [
+    {label:"100%", a:255},
+    {label:"85%",  a:220},
+    {label:"70%",  a:180},
+    {label:"55%",  a:140},
+    {label:"40%",  a:100},
+    {label:"25%",  a:64},
+  ];
+
+  const ui = {
+    toolPen: document.getElementById("toolPen"),
+    toolEraser: document.getElementById("toolEraser"),
+    toolHigh: document.getElementById("toolHighlighter"),
+    btnUndo: document.getElementById("btnUndo"),
+    btnClear: document.getElementById("btnClear"),
+    btnDark: document.getElementById("btnDark"),
+    color: document.getElementById("color"),
+    width: document.getElementById("width"),
+    alpha: document.getElementById("alpha"),
+    toast: document.getElementById("toast"),
+    fatal: document.getElementById("fatal"),
+    keyHint: document.getElementById("keyHint"),
+  };
+
+  function toast(msg){
+    ui.toast.textContent = msg;
+    ui.toast.classList.add("show");
+    setTimeout(()=>ui.toast.classList.remove("show"), 900);
+  }
+
+  function showFatal(msg){
+    ui.fatal.style.display = "block";
+    ui.fatal.textContent = msg;
+  }
+
+  window.addEventListener("error", (e)=>{
+    showFatal("JS error:\n" + (e?.message||e) + "\n" + (e?.filename||"") + ":" + (e?.lineno||""));
+  });
+  window.addEventListener("unhandledrejection", (e)=>{
+    showFatal("Promise rejection:\n" + (e?.reason?.message || e?.reason || e));
+  });
+
+  function pageId(){
+    const p = new URLSearchParams(location.search);
+    return p.get("page") || p.get("p") || (location.hash ? location.hash.slice(1) : "default");
+  }
+  function storageKey(){
+    // keep it simple + stable
+    return `p5wb_onefile_v1::${location.origin}${location.pathname}::page=${pageId()}`;
+  }
+
+  ui.keyHint.textContent = pageId();
+
+  // ----- state (only what we need) -----
+  const S = {
+    tool: "pen",            // ALWAYS start in pen
+    dark: false,
+
+    // pen settings
+    pen: { color: "#111111", w: 3, a: 255 },
+
+    // highlighter settings (independent)
+    high: { w: 20, a: 110 }, // yellow with alpha ~110
+
+    // actions: {type:"stroke"|"erase", pts:[{x,y}], color, w, a}
+    actions: [],
+    undo: []
+  };
+
+  // ----- persistence -----
+  function saveNow(){
+    try{
+      const payload = {
+        v: 1,
+        page: pageId(),
+        dark: !!S.dark,
+        pen: S.pen,
+        high: S.high,
+        actions: S.actions
+      };
+      localStorage.setItem(storageKey(), JSON.stringify(payload));
+    }catch(e){
+      // If Slides blocks storage in some cases, you'll see it here
+      console.warn("saveNow failed", e);
+    }
+  }
+
+  function loadNow(){
+    try{
+      const raw = localStorage.getItem(storageKey());
+      if (!raw) return false;
+      const data = JSON.parse(raw);
+      if (!data || data.v !== 1) return false;
+
+      S.dark = !!data.dark;
+      if (data.pen)  S.pen  = Object.assign(S.pen, data.pen);
+      if (data.high) S.high = Object.assign(S.high, data.high);
+      if (Array.isArray(data.actions)) S.actions = data.actions;
+
+      return true;
+    }catch(e){
+      console.warn("loadNow failed", e);
+      return false;
+    }
+  }
+
+  // Save when Slides kills the iframe quickly
+  window.addEventListener("pagehide", ()=>{ saveNow(); }, {capture:true});
+  document.addEventListener("visibilitychange", ()=>{
+    if (document.visibilityState === "hidden") saveNow();
+  }, {capture:true});
+
+  // ----- UI init -----
+  function setActiveTool(t){
+    S.tool = t;
+
+    ui.toolPen.classList.toggle("active", t==="pen");
+    ui.toolEraser.classList.toggle("active", t==="eraser");
+    ui.toolHigh.classList.toggle("active", t==="highlighter");
+
+    // IMPORTANT: never let highlighter overwrite pen settings.
+    // UI controls show pen settings when in pen/eraser, and show high settings when in highlighter.
+    syncControlsFromState();
+  }
+
+  function syncControlsFromState(){
+    if (S.tool === "highlighter"){
+      ui.color.value = "#ffff00"; // fixed yellow
+      ui.color.disabled = true;
+      ui.width.value = String(S.high.w);
+      ui.alpha.value = String(S.high.a);
+    } else {
+      ui.color.disabled = false;
+      ui.color.value = S.pen.color;
+      ui.width.value = String(S.pen.w);
+      ui.alpha.value = String(S.pen.a);
+    }
+  }
+
+  function applyDark(){
+    document.body.classList.toggle("dark", !!S.dark);
+    ui.btnDark.textContent = S.dark ? "🔆" : "🌙";
+  }
+
+  // populate selects
+  (function buildSelects(){
+    ui.width.innerHTML = "";
+    for (const w of WIDTHS){
+      const o = document.createElement("option");
+      o.value = String(w);
+      o.textContent = `${w}px`;
+      ui.width.appendChild(o);
+    }
+    ui.alpha.innerHTML = "";
+    for (const it of ALPHAS){
+      const o = document.createElement("option");
+      o.value = String(it.a);
+      o.textContent = it.label;
+      ui.alpha.appendChild(o);
+    }
+  })();
+
+  // events
+  ui.toolPen.addEventListener("click", ()=>setActiveTool("pen"));
+  ui.toolEraser.addEventListener("click", ()=>setActiveTool("eraser"));
+  ui.toolHigh.addEventListener("click", ()=>setActiveTool("highlighter"));
+
+  ui.btnDark.addEventListener("click", ()=>{
+    S.dark = !S.dark;
+    applyDark();
+    saveNow();
+  });
+
+  ui.color.addEventListener("change", ()=>{
+    if (S.tool !== "highlighter"){
+      S.pen.color = ui.color.value;
+      saveNow();
+    }
+  });
+
+  ui.width.addEventListener("change", ()=>{
+    const w = parseInt(ui.width.value,10) || 3;
+    if (S.tool === "highlighter") S.high.w = w;
+    else S.pen.w = w;
+    saveNow();
+  });
+
+  ui.alpha.addEventListener("change", ()=>{
+    const a = parseInt(ui.alpha.value,10);
+    if (S.tool === "highlighter") S.high.a = a;
+    else S.pen.a = a;
+    saveNow();
+  });
+
+  ui.btnClear.addEventListener("click", ()=>{
+    if (!S.actions.length) return;
+    S.undo.push(S.actions);
+    S.actions = [];
+    redrawAll();
+    saveNow();
+  });
+
+  ui.btnUndo.addEventListener("click", ()=>{
+    if (S.undo.length){
+      S.actions = S.undo.pop();
+      redrawAll();
+      saveNow();
+      return;
+    }
+    // lightweight undo: pop last stroke
+    if (S.actions.length){
+      S.actions.pop();
+      redrawAll();
+      saveNow();
+    }
+  });
+
+  // keyboard: Ctrl+Z, P/E/H
+  window.addEventListener("keydown", (ev)=>{
+    const key = (ev.key||"").toLowerCase();
+    if ((ev.ctrlKey || ev.metaKey) && key === "z"){
+      ev.preventDefault();
+      ui.btnUndo.click();
+      return;
+    }
+    if (key === "p") setActiveTool("pen");
+    if (key === "e") setActiveTool("eraser");
+    if (key === "h") setActiveTool("highlighter");
+  }, true);
+
+  // ----- p5 drawing -----
+  let pg;
+  let current = null;
+
+  function styleForTool(){
+    if (S.tool === "eraser"){
+      return { erase:true, w: Math.max(10, S.pen.w*3), color:"#000000", a:255 };
+    }
+    if (S.tool === "highlighter"){
+      return { erase:false, w: S.high.w, color:"#ffff00", a: S.high.a };
+    }
+    return { erase:false, w: S.pen.w, color: S.pen.color, a: S.pen.a };
+  }
+
+  function drawStrokeToGraphics(g, act){
+    if (!act || !Array.isArray(act.pts) || act.pts.length < 2) return;
+
+    g.push();
+    g.strokeWeight(act.w || 3);
+    g.strokeCap(ROUND);
+    g.strokeJoin(ROUND);
+
+    if (act.erase){
+      g.erase();
+      g.stroke(0, 255);
+    } else {
+      const c = color(act.color || "#111");
+      c.setAlpha(act.a ?? 255);
+      g.stroke(c);
+    }
+
+    for (let i=1;i<act.pts.length;i++){
+      const p0 = act.pts[i-1], p1 = act.pts[i];
+      g.line(p0.x,p0.y,p1.x,p1.y);
+    }
+    if (act.erase) g.noErase();
+    g.pop();
+  }
+
+  function redrawAll(){
+    if (!pg) return;
+    pg.clear();
+    for (const a of S.actions) drawStrokeToGraphics(pg, a);
+    // ensure frame updates even if slides messes with loop
+    try { loop(); } catch(_){}
+  }
+
+  // p5 globals
+  window.setup = function(){
+    const c = createCanvas(windowWidth, windowHeight);
+    c.parent("canvas-wrap");
+    pixelDensity(1);
+
+    pg = createGraphics(windowWidth, windowHeight);
+    pg.pixelDensity(1);
+    pg.clear();
+
+    // load persisted state
+    loadNow();
+
+    // apply UI + redraw
+    applyDark();
+    setActiveTool("pen");      // FORCE pen start
+    syncControlsFromState();
+    redrawAll();
+
+    // keep canvas interactive in iframes
+    const canvasEl = document.querySelector("canvas");
+    canvasEl.style.touchAction = "none";
+
+    // just in case, keep looping (some embeds call noLoop indirectly)
+    try { loop(); } catch(_){}
+  };
+
+  window.draw = function(){
+    clear();
+    image(pg, 0, 0);
+  };
+
+  window.windowResized = function(){
+    resizeCanvas(windowWidth, windowHeight);
+    const old = pg;
+    pg = createGraphics(windowWidth, windowHeight);
+    pg.pixelDensity(1);
+    pg.clear();
+    pg.image(old, 0, 0);
+    redrawAll();
+  };
+
+  function inToolbar(clientX, clientY){
+    const r = document.getElementById("ui").getBoundingClientRect();
+    return clientX>=r.left && clientX<=r.right && clientY>=r.top && clientY<=r.bottom;
+  }
+
+  function addPoint(ev){
+    const rect = ev.target.getBoundingClientRect();
+    return { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+  }
+
+  function startStroke(ev){
+    if (inToolbar(ev.clientX, ev.clientY)) return;
+    if (S.tool === "pointer") return;
+
+    const st = styleForTool();
+    current = { erase: !!st.erase, w: st.w, color: st.color, a: st.a, pts: [] };
+    current.pts.push(addPoint(ev));
+  }
+
+  function moveStroke(ev){
+    if (!current) return;
+    const p = addPoint(ev);
+    const last = current.pts[current.pts.length-1];
+    if (last && dist(last.x,last.y,p.x,p.y) < 0.6) return;
+    current.pts.push(p);
+
+    // preview directly onto pg for responsiveness (then finalize again)
+    if (current.pts.length >= 2){
+      const a = { ...current, pts: current.pts.slice(-2) };
+      drawStrokeToGraphics(pg, a);
+    }
+  }
+
+  function endStroke(){
+    if (!current) return;
+
+    // finalize action
+    if (current.pts.length >= 2){
+      S.undo.length = 0; // reset "full restore" undo stack when new action happens
+      S.actions.push(current);
+      // redraw to avoid tiny preview artifacts
+      redrawAll();
+      // SAVE IMMEDIATELY (don’t debounce in Slides iframes)
+      saveNow();
+    }
+    current = null;
+  }
+
+  // pointer events on canvas
+  function bindCanvasEvents(){
+    const canvasEl = document.querySelector("canvas");
+    if (!canvasEl) return;
+
+    canvasEl.addEventListener("pointerdown", (ev)=>{
+      ev.preventDefault();
+      try { canvasEl.setPointerCapture(ev.pointerId); } catch(_){}
+      startStroke(ev);
+    }, {passive:false});
+
+    canvasEl.addEventListener("pointermove", (ev)=>{
+      if (!current) return;
+      ev.preventDefault();
+      moveStroke(ev);
+    }, {passive:false});
+
+    canvasEl.addEventListener("pointerup", (ev)=>{
+      ev.preventDefault();
+      try { canvasEl.releasePointerCapture(ev.pointerId); } catch(_){}
+      endStroke();
+    }, {passive:false});
+
+    canvasEl.addEventListener("pointercancel", ()=>{
+      endStroke();
+    }, {passive:false});
+  }
+
+  // bind after setup creates canvas
+  const _origSetup = window.setup;
+  window.setup = function(){
+    _origSetup();
+    bindCanvasEvents();
+  };
+})();
+</script>
 </body>
 </html>
