@@ -144,19 +144,6 @@
       font-size:13px; line-height:1; padding:0; color:var(--text);
     }
 
-    /* row of quick buttons */
-    .quickRow{
-      display:flex;
-      gap:4px;
-    }
-    .quickRow .miniWide{
-      flex:1;
-      height:26px;
-      padding:0 4px;
-      font-size:14px;
-    }
-    .quickRow .miniWide:active{ transform: translateY(1px); }
-
     .shortcutWrap{ position:relative; }
     #shortcutCard{
       position:absolute; top:110%; right:0;
@@ -305,77 +292,6 @@
     }
     #textOkBtn:hover{ background:rgba(0,0,0,0.05); }
 
-    /* JSON Paste modal (works in sandboxed iframes) */
-    #jsonModalBackdrop{
-      position:fixed; inset:0;
-      background: rgba(0,0,0,0.35);
-      display:none;
-      z-index: 1000000;
-    }
-    #jsonModal{
-      position:absolute;
-      left: 50%; top: 50%;
-      transform: translate(-50%,-50%);
-      width: min(760px, calc(100vw - 24px));
-      background: rgba(255,255,255,0.97);
-      border: 1px solid rgba(0,0,0,0.18);
-      border-radius: 14px;
-      box-shadow: 0 18px 44px rgba(0,0,0,0.22);
-      padding: 12px;
-      font-family: var(--font);
-      color: rgba(0,0,0,0.86);
-    }
-    #jsonModalTop{
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-      margin-bottom: 10px;
-    }
-    #jsonModalTitle{
-      font-size: 12px; font-weight: 700; opacity: 0.85;
-    }
-    #jsonModalClose{
-      width: 30px; height: 30px;
-      border-radius: 999px;
-      border: 1px solid rgba(0,0,0,0.14);
-      background: rgba(255,255,255,0.92);
-      cursor: pointer;
-      font-size: 14px;
-      line-height: 1;
-    }
-    #jsonModalTextarea{
-      width: 100%;
-      height: min(48vh, 420px);
-      border: 1px solid rgba(0,0,0,0.16);
-      border-radius: 12px;
-      padding: 10px;
-      resize: vertical;
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-      font-size: 12px;
-      box-sizing: border-box;
-      outline: none;
-    }
-    #jsonModalBottom{
-      margin-top: 10px;
-      display:flex; align-items:center; justify-content:space-between; gap:10px;
-    }
-    #jsonModalHint{
-      font-size: 11px; opacity: 0.65;
-      white-space: nowrap;
-      overflow:hidden;
-      text-overflow: ellipsis;
-    }
-    .jsonModalBtn{
-      border:1px solid rgba(0,0,0,0.16);
-      background:rgba(255,255,255,0.92);
-      border-radius:12px;
-      padding:8px 10px;
-      font-size:12px;
-      cursor:pointer;
-      font-family: var(--font);
-      color:rgba(0,0,0,0.86);
-      white-space:nowrap;
-    }
-    .jsonModalBtn:active{ transform: translateY(1px); }
-
     #ui, #ui * { touch-action: none; }
   </style>
 </head>
@@ -420,17 +336,6 @@
 
     <!-- CORE -->
     <div class="core">
-      <!-- quick buttons:
-           🖼 PNG clipboard (may fail in sandbox)
-           📋 Copy JSON (works more often)
-           ⤓ Paste JSON (modal, sandbox-friendly)
-      -->
-      <div class="quickRow" aria-label="Export / Save / Load">
-        <button class="miniWide" id="btnPNG" title="Copy PNG to clipboard">🖼️</button>
-        <button class="miniWide" id="btnCopyJSON" title="Copy all annotations JSON to clipboard">📋</button>
-        <button class="miniWide" id="btnPasteJSON" title="Paste all annotations JSON (modal)">⤓</button>
-      </div>
-
       <button class="tool" id="toolPen" title="Pen (P)"><span class="ico">✎</span><span>Pen</span></button>
       <button class="tool" id="toolEraser" title="Eraser (E)"><span class="ico">🧽</span><span>Eraser</span></button>
       <button class="tool" id="toolHighlighter" title="Highlighter (H)"><span class="ico">🖍️</span><span>Highlighter</span></button>
@@ -519,24 +424,6 @@
     </div>
   </div>
 
-  <!-- JSON paste modal -->
-  <div id="jsonModalBackdrop" aria-hidden="true">
-    <div id="jsonModal" role="dialog" aria-modal="true" aria-label="Paste JSON">
-      <div id="jsonModalTop">
-        <div id="jsonModalTitle">Paste annotations JSON</div>
-        <button id="jsonModalClose" title="Close">✕</button>
-      </div>
-      <textarea id="jsonModalTextarea" spellcheck="false" placeholder='Paste JSON here (schema: 1)'></textarea>
-      <div id="jsonModalBottom">
-        <div id="jsonModalHint">Tip: use this when embedded in slides.com (downloads blocked).</div>
-        <div style="display:flex; gap:8px;">
-          <button class="jsonModalBtn" id="jsonModalCancel">Cancel</button>
-          <button class="jsonModalBtn" id="jsonModalLoad">Load JSON</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
   <div id="canvas-wrap"></div>
   <div id="canvas-outline"></div>
   <div id="text-overlay"></div>
@@ -586,6 +473,7 @@ function safeParseJSON(s, fallback){
 }
 
 function normalizedPresentationURL(){
+  // Use origin + pathname (good for compatibility checks); keep search if you rely on it
   const u = new URL(window.location.href);
   return u.origin + u.pathname;
 }
@@ -801,6 +689,7 @@ function snapPoint(x,y){
 }
 
 function quantizePoint(p){
+  // full pixel steps
   return { x: Math.round(p.x), y: Math.round(p.y) };
 }
 
@@ -833,7 +722,10 @@ let toastTimer = null;
 function positionHudBox(boxEl, extraLeftGapPx){
   if (!dragHandle) return;
   const r = dragHandle.getBoundingClientRect();
+
+  // gap between box and toolbar head
   const GAP = (typeof extraLeftGapPx === "number") ? extraLeftGapPx : 10;
+
   boxEl.style.left = (r.left - GAP) + "px";
   boxEl.style.top  = (r.top + 2) + "px";
   boxEl.style.transform = "translate(-100%, 0)";
@@ -855,6 +747,7 @@ function hideMeasureBox(){
 function showMeasureBox(parts){
   if (!dragHandle) return;
   measureBox.textContent = parts.join("   ");
+  // small gap between indicator box and toolbar head:
   positionHudBox(measureBox, 14);
   measureBox.classList.add("show");
 }
@@ -1218,7 +1111,7 @@ function updateMeasureForCurrentShape(){
     if (len < 2){ hideMeasureBox(); return; }
 
     const lenPx = quantizeScalar(len);
-    const deg = Math.round(normDegSigned(radToDeg(Math.atan2(dy, dx))));
+    const deg = Math.round(normDegSigned(radToDeg(Math.atan2(dy, dx)))); // full degrees
     showMeasureBox([`L: ${lenPx} px`, `α: ${deg}°`]);
     return;
   }
@@ -1604,6 +1497,7 @@ function rebuildTextOverlay(){
     }
   }
 
+  // typeset + store bbox
   setTimeout(async ()=>{
     await typesetTextOverlay();
     for (let li=0; li<3; li++){
@@ -1899,6 +1793,7 @@ function finishAction(){
       }
     }
   } else {
+    // ensure shape endpoints/radius are integers
     if (current.type==="line" || current.type==="arrow" || current.type==="rect" || current.type==="ellipse"){
       current.a = quantizePoint(current.a);
       current.b = quantizePoint(current.b);
@@ -2054,8 +1949,6 @@ function onKeyDown(ev){
 let ui, dragHandle;
 let btnCycle, glyphCycle, btnPointer;
 
-let btnPNG, btnCopyJSON, btnPasteJSON;
-
 let toolPenBtn, toolEraserBtn, toolLaserBtn, toolHighlighterBtn, toolTextBtn, toolFillBtn, toolLassoBtn;
 let shapeToolSel;
 let bgModeSel, strokeWidthSel, smoothingSel, transpSel;
@@ -2073,10 +1966,6 @@ function initUI(){
   btnCycle=document.getElementById("btnCycle");
   glyphCycle=document.getElementById("glyphCycle");
   btnPointer=document.getElementById("btnPointer");
-
-  btnPNG=document.getElementById("btnPNG");
-  btnCopyJSON=document.getElementById("btnCopyJSON");
-  btnPasteJSON=document.getElementById("btnPasteJSON");
 
   toolPenBtn=document.getElementById("toolPen");
   toolEraserBtn=document.getElementById("toolEraser");
@@ -2207,31 +2096,6 @@ function initUI(){
   // ensure arrow is default selected in dropdown
   shapeToolSel.value = "arrow";
   tool = "pointer";
-
-  // Quick buttons
-  btnPNG.addEventListener("click", async ()=>{
-    try{
-      await copyPNGToClipboard();
-      showToast("PNG copied to clipboard", 1400);
-    }catch(e){
-      showToast("PNG copy failed (sandbox / permission)", 2400);
-    }
-  });
-
-  btnCopyJSON.addEventListener("click", async ()=>{
-    try{
-      await copyAllJSONToClipboard();
-    }catch(e){
-      showToast("Copy failed", 2200);
-    }
-  });
-
-  btnPasteJSON.addEventListener("click", ()=>{
-    openJSONModal();
-  });
-
-  // JSON modal wiring
-  initJSONModal();
 }
 
 function buildStrokeSelect(){
@@ -2432,6 +2296,7 @@ function initDrag(){
     ui.style.left=`${nl}px`;
     ui.style.top=`${nt}px`;
 
+    // keep HUD boxes aligned while dragging
     if (measureBox.classList.contains("show")) positionHudBox(measureBox, 14);
     if (toastBox.classList.contains("show")) positionHudBox(toastBox, 12);
   });
@@ -2492,258 +2357,6 @@ function rebuildLayersMenu(){
 function updateLayersLabel(){
   const vis = layers[activeLayer]?.visible ? "on" : "off";
   layersLabel.textContent = `🧱  Layers (${activeLayer+1}:${vis})`;
-}
-
-/* =====================
-   PNG export to clipboard (white background + LaTeX)
-   ===================== */
-function blobFromCanvas(canvas, type="image/png", quality){
-  return new Promise((resolve, reject)=>{
-    canvas.toBlob((b)=> b ? resolve(b) : reject(new Error("toBlob failed")), type, quality);
-  });
-}
-
-function svgToImageElement(svgEl, targetW, targetH){
-  return new Promise((resolve, reject)=>{
-    try{
-      const clone = svgEl.cloneNode(true);
-      clone.setAttribute("width", String(targetW));
-      clone.setAttribute("height", String(targetH));
-      const s = new XMLSerializer().serializeToString(clone);
-      const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s);
-
-      const img = new Image();
-      img.onload = ()=> resolve(img);
-      img.onerror = ()=> reject(new Error("svg image decode failed"));
-      img.src = url;
-    }catch(e){
-      reject(e);
-    }
-  });
-}
-
-function drawPlainText(ctx, a){
-  const size = (a.size || 20);
-  const style = a.style || "regular";
-
-  let weight = "400";
-  let fontStyle = "normal";
-  if (style === "bold"){ weight="700"; fontStyle="normal"; }
-  if (style === "italic"){ weight="400"; fontStyle="italic"; }
-
-  ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.86)";
-  ctx.font = `${fontStyle} ${weight} ${size}px "Libertinus Sans", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`;
-  ctx.textBaseline = "top";
-
-  const lines = String(a.raw || "").split("\n");
-  const lh = Math.round(size * 1.25);
-  let yy = Math.round(a.y);
-  const xx = Math.round(a.x);
-  for (const line of lines){
-    ctx.fillText(line, xx, yy);
-    yy += lh;
-  }
-  ctx.restore();
-}
-
-async function copyPNGToClipboard(){
-  saveToStorage(slideKey);
-  await typesetTextOverlay();
-
-  const W = Math.round(window.innerWidth);
-  const H = Math.round(window.innerHeight);
-
-  const off = document.createElement("canvas");
-  off.width = W;
-  off.height = H;
-  const ctx = off.getContext("2d");
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.fillRect(0,0,W,H);
-
-  const p5Canvas = document.querySelector("canvas");
-  ctx.drawImage(p5Canvas, 0, 0);
-
-  for (let li=0; li<3; li++){
-    if (!layers[li].visible) continue;
-
-    const actions = layers[li].actions;
-    for (let i=0;i<actions.length;i++){
-      const a = actions[i];
-      if (a.type !== "text") continue;
-
-      const node = textOverlay.querySelector(`.text-box[data-layer="${li}"][data-index="${i}"]`);
-      if (!node) { drawPlainText(ctx, a); continue; }
-
-      const svg = node.querySelector("svg");
-      if (svg){
-        const w = Math.max(1, node.offsetWidth || (a.w||1));
-        const h = Math.max(1, node.offsetHeight || (a.h||1));
-        try{
-          const img = await svgToImageElement(svg, w, h);
-          ctx.drawImage(img, Math.round(a.x), Math.round(a.y), w, h);
-        }catch(e){
-          drawPlainText(ctx, a);
-        }
-      } else {
-        drawPlainText(ctx, a);
-      }
-    }
-  }
-
-  const blob = await blobFromCanvas(off, "image/png");
-  if (!navigator.clipboard || !window.ClipboardItem) throw new Error("Clipboard API unavailable");
-  await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
-}
-
-/* =====================
-   Copy/Paste ALL slides whiteboards to/from clipboard (sandbox-friendly)
-   ===================== */
-function collectAllWhiteboardStorage(){
-  const deckKey = getDeckKey();
-  const prefix = STORAGE_PREFIX + deckKey + ":";
-
-  const out = {};
-  for (let i=0;i<localStorage.length;i++){
-    const k = localStorage.key(i);
-    if (!k) continue;
-    if (k.startsWith(prefix)){
-      out[k] = localStorage.getItem(k);
-    }
-  }
-  return { deckKey, prefix, items: out };
-}
-
-async function copyAllJSONToClipboard(){
-  saveToStorage(slideKey);
-
-  const { deckKey, prefix, items } = collectAllWhiteboardStorage();
-  const payload = {
-    schema: 1,
-    createdAt: new Date().toISOString(),
-    presentationURL: normalizedPresentationURL(),
-    deckKey,
-    storagePrefix: prefix,
-    items
-  };
-
-  const text = JSON.stringify(payload);
-
-  // Modern text clipboard
-  try{
-    if (navigator.clipboard && navigator.clipboard.writeText){
-      await navigator.clipboard.writeText(text);
-      showToast("JSON copied to clipboard", 1600);
-      return;
-    }
-  }catch(e){}
-
-  // Legacy fallback (often works in sandbox)
-  const ta = document.createElement("textarea");
-  ta.value = text;
-  ta.style.position = "fixed";
-  ta.style.left = "-9999px";
-  ta.style.top = "0";
-  document.body.appendChild(ta);
-  ta.focus();
-  ta.select();
-  try{
-    document.execCommand("copy");
-    showToast("JSON copied to clipboard", 1600);
-  }catch(e){
-    showToast("Copy failed", 2200);
-    throw e;
-  }finally{
-    ta.remove();
-  }
-}
-
-function importAllFromJSONString(text){
-  const data = safeParseJSON(text, null);
-  if (!data || data.schema !== 1 || typeof data.items !== "object"){
-    showToast("Invalid JSON", 2200);
-    return false;
-  }
-
-  const currentDeckKey = getDeckKey();
-  if (data.deckKey !== currentDeckKey){
-    showToast("JSON does not match this presentation", 2600);
-    return false;
-  }
-
-  try{
-    const items = data.items || {};
-    for (const k of Object.keys(items)){
-      const v = items[k];
-      if (typeof v === "string") localStorage.setItem(k, v);
-    }
-  }catch(e){
-    showToast("Failed to write localStorage", 2400);
-    return false;
-  }
-
-  loadFromStorage(slideKey);
-  rebuildAllBuffers();
-  rebuildTextOverlay();
-  showToast("Loaded JSON", 1600);
-  return true;
-}
-
-/* JSON modal */
-let jsonBackdrop, jsonTA, jsonCloseBtn, jsonCancelBtn, jsonLoadBtn;
-function initJSONModal(){
-  jsonBackdrop = document.getElementById("jsonModalBackdrop");
-  jsonTA = document.getElementById("jsonModalTextarea");
-  jsonCloseBtn = document.getElementById("jsonModalClose");
-  jsonCancelBtn = document.getElementById("jsonModalCancel");
-  jsonLoadBtn = document.getElementById("jsonModalLoad");
-
-  function close(){
-    jsonBackdrop.style.display = "none";
-    jsonBackdrop.setAttribute("aria-hidden","true");
-  }
-  function open(){
-    jsonBackdrop.style.display = "block";
-    jsonBackdrop.setAttribute("aria-hidden","false");
-    jsonTA.value = "";
-    setTimeout(()=> jsonTA.focus(), 0);
-  }
-  window.openJSONModal = open;
-  window.closeJSONModal = close;
-
-  jsonBackdrop.addEventListener("pointerdown", (ev)=>{
-    if (ev.target === jsonBackdrop) close();
-  });
-
-  jsonCloseBtn.addEventListener("click", ()=> close());
-  jsonCancelBtn.addEventListener("click", ()=> close());
-
-  jsonLoadBtn.addEventListener("click", ()=>{
-    const t = (jsonTA.value || "").trim();
-    if (!t){
-      showToast("Nothing pasted", 1600);
-      return;
-    }
-    const ok = importAllFromJSONString(t);
-    if (ok) close();
-  });
-
-  document.addEventListener("keydown",(ev)=>{
-    if (jsonBackdrop.style.display !== "block") return;
-    if (ev.key === "Escape") close();
-  });
-}
-function openJSONModal(){
-  if (window.openJSONModal) window.openJSONModal();
-}
-
-/* =====================
-   Minimal remaining glue
-   ===================== */
-function closePopups(){
-  if (palette) palette.classList.remove("open");
-  if (layersMenu) layersMenu.classList.remove("open");
 }
 </script>
 </body>
