@@ -3284,57 +3284,62 @@ function ensureCanvg(){
 // (canvg/Image) will render blank.
 function buildStandaloneMathJaxSVG(svgEl, targetW, targetH){
   const NS = "http://www.w3.org/2000/svg";
+  const XLINK = "http://www.w3.org/1999/xlink";
+
   const clone = svgEl.cloneNode(true);
   clone.setAttribute("width", String(targetW));
   clone.setAttribute("height", String(targetH));
   if (!clone.getAttribute("xmlns")) clone.setAttribute("xmlns", NS);
-  if (!clone.getAttribute("xmlns:xlink")) clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+  if (!clone.getAttribute("xmlns:xlink")) clone.setAttribute("xmlns:xlink", XLINK);
 
-  // Ensure exported math is visible even when external CSS is not available.
-  // MathJax SVG output often relies on inherited `currentColor` / CSS rules.
-  // When we serialize the SVG, those rules are lost, so we inject minimal styles
-  // and force a sane default color.
+  // Make sure the export is self-contained and visible without external CSS.
   try{
     clone.setAttribute("color", "#000");
-    // Insert a minimal <style> to make paths visible in standalone renderers.
     const styleEl = document.createElementNS(NS, "style");
     styleEl.setAttribute("type", "text/css");
     styleEl.textContent = [
       "svg{color:#000}",
       "path{fill:currentColor}",
       "line,polyline,polygon,rect,circle,ellipse{stroke:currentColor; fill:none}",
-      ".mjx-char{fill:currentColor}",
-      ".mjx-n{fill:currentColor}",
+      ".mjx-char,.mjx-n{fill:currentColor}"
     ].join("\n");
     clone.insertBefore(styleEl, clone.firstChild);
   }catch(e){ /* best-effort */ }
 
-  // Gather all MathJax shared defs we can find.
-  const defsHTML = [];
+  // === Inline MathJax shared glyph defs ===
+  // MathJax v2 often stores glyph definitions in a hidden SVG:
+  //   <div id="MathJax_SVG_Hidden"> ... <defs> ... </defs> ...
+  // Formula SVGs then use <use xlink:href="#MJX-...">. If we serialize just the formula SVG,
+  // the <defs> are missing -> rasterizers render blank. We must copy those defs into the clone.
   try{
-    const hidden = document.getElementById("MathJax_SVG_Hidden");
-    if (hidden){
-      hidden.querySelectorAll("defs").forEach(d=> defsHTML.push(d.innerHTML));
-    }
-    const glyphs = document.getElementById("MathJax_SVG_glyphs");
-    if (glyphs){
-      glyphs.querySelectorAll("defs").forEach(d=> defsHTML.push(d.innerHTML));
-    }
-  }catch(e){}
-
-  if (defsHTML.length){
     let targetDefs = clone.querySelector("defs");
     if (!targetDefs){
       targetDefs = document.createElementNS(NS, "defs");
+      // Put defs early so references resolve.
       clone.insertBefore(targetDefs, clone.firstChild);
     }
-    // Prepend shared defs so referenced IDs resolve.
-    targetDefs.innerHTML = defsHTML.join("\n") + "\n" + targetDefs.innerHTML;
-  }
 
-  // IMPORTANT: MathJax v2 SVG output often uses <use xlink:href="#..."> for glyphs.
-  // Some rasterizers (and some canvg builds) may render these as blank.
-  // To make exports robust, inline <use> elements by replacing them with the referenced glyph paths.
+    const appendDefsChildren = (defsEl)=>{
+      if (!defsEl) return;
+      // Clone each child node and append (avoid SVG innerHTML pitfalls)
+      defsEl.childNodes && Array.from(defsEl.childNodes).forEach(ch=>{
+        if (ch.nodeType === 1 || ch.nodeType === 3){ // element or text
+          targetDefs.appendChild(ch.cloneNode(true));
+        }
+      });
+    };
+
+    const hidden = document.getElementById("MathJax_SVG_Hidden");
+    if (hidden){
+      hidden.querySelectorAll("defs").forEach(appendDefsChildren);
+    }
+    const glyphs = document.getElementById("MathJax_SVG_glyphs");
+    if (glyphs){
+      glyphs.querySelectorAll("defs").forEach(appendDefsChildren);
+    }
+  }catch(e){ /* best-effort */ }
+
+  // === Replace <use> with referenced glyphs to maximize renderer compatibility ===
   try{
     const idMap = new Map();
     clone.querySelectorAll("defs [id]").forEach(el=>{
@@ -3350,17 +3355,16 @@ function buildStandaloneMathJaxSVG(svgEl, targetW, targetH){
       if (!ref) continue;
 
       const repl = ref.cloneNode(true);
-      // Avoid duplicate IDs in the final SVG.
       repl.removeAttribute("id");
 
-      // Ensure visibility when CSS is missing.
+      // Visibility defaults (some renderers ignore CSS)
       try{
         if (repl.tagName && repl.tagName.toLowerCase() === "path" && !repl.getAttribute("fill")){
           repl.setAttribute("fill", "currentColor");
         }
       }catch(e){}
 
-      // Apply the <use> x/y translation and transform, if present.
+      // Apply the <use> translation and transform, if present.
       const ux = parseFloat(u.getAttribute("x") || "0") || 0;
       const uy = parseFloat(u.getAttribute("y") || "0") || 0;
       const uTr = u.getAttribute("transform") || "";
@@ -3378,13 +3382,12 @@ function buildStandaloneMathJaxSVG(svgEl, targetW, targetH){
     }
   }catch(e){ /* best-effort */ }
 
-  // As an extra safety net, force-fill any remaining paths that don't specify fill.
-  // This prevents "invisible" glyphs when the renderer ignores CSS.
+  // Final safety: ensure paths have a fill so they aren't invisible.
   try{
     clone.querySelectorAll("path").forEach(p=>{
       if (!p.getAttribute("fill")) p.setAttribute("fill", "#000");
     });
-  }catch(e){ /* best-effort */ }
+  }catch(e){}
 
   return new XMLSerializer().serializeToString(clone);
 }
@@ -3437,6 +3440,74 @@ async function rasterizeSVGToCanvas(svgString, w, h){
     return null;
   }
 }
+
+/* =====================
+   Export helper: rasterize a text-box DOM node (including MathJax SVG + surrounding text)
+   via SVG <foreignObject>. This preserves mixed content (plain text + formulas).
+   ===================== */
+async function rasterizeTextBoxNodeViaForeignObject(liveNode, boxW, boxH){
+  try{
+    const w = Math.max(1, Math.round(boxW || liveNode.offsetWidth || 1));
+    const h = Math.max(1, Math.round(boxH || liveNode.offsetHeight || 1));
+
+    // Clone the text box and neutralize positioning for export
+    const clone = liveNode.cloneNode(true);
+    try{
+      clone.style.position = "relative";
+      clone.style.left = "0px";
+      clone.style.top  = "0px";
+      clone.style.transform = "none";
+      clone.style.pointerEvents = "none";
+      clone.style.margin = "0";
+      clone.style.width = w + "px";
+      clone.style.height = h + "px";
+    }catch(e){}
+
+    // Inline MathJax shared glyph defs into every formula SVG inside the clone
+    try{
+      const liveSvgs = Array.from(liveNode.querySelectorAll("svg"));
+      const cloneSvgs = Array.from(clone.querySelectorAll("svg"));
+      const parser = new DOMParser();
+
+      for (let i=0; i<Math.min(liveSvgs.length, cloneSvgs.length); i++){
+        const sLive = liveSvgs[i];
+        const sClone = cloneSvgs[i];
+
+        const r = sLive.getBoundingClientRect();
+        const sw = Math.max(1, Math.round(r.width || sLive.clientWidth || 1));
+        const sh = Math.max(1, Math.round(r.height || sLive.clientHeight || 1));
+
+        const standalone = buildStandaloneMathJaxSVG(sLive, sw, sh);
+        const doc = parser.parseFromString(standalone, "image/svg+xml");
+        const newSvg = doc.documentElement;
+        if (newSvg && newSvg.tagName && newSvg.tagName.toLowerCase() === "svg"){
+          // Ensure the SVG does not overflow in the foreignObject
+          try{
+            newSvg.setAttribute("width", String(sw));
+            newSvg.setAttribute("height", String(sh));
+          }catch(e){}
+          sClone.parentNode && sClone.parentNode.replaceChild(newSvg, sClone);
+        }
+      }
+    }catch(e){ /* best-effort */ }
+
+    const foSvg =
+`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">
+  <foreignObject x="0" y="0" width="100%" height="100%">
+    <div xmlns="http://www.w3.org/1999/xhtml" style="width:${w}px;height:${h}px;overflow:visible;">
+      ${clone.outerHTML}
+    </div>
+  </foreignObject>
+</svg>`;
+
+    // Browser rasterization tends to support foreignObject; canvg usually doesn't.
+    const c = await rasterizeSVGToCanvas(foSvg, w, h);
+    return c;
+  }catch(e){
+    return null;
+  }
+}
+
 
 
 function svgToImageElement(svgEl, targetW, targetH){
@@ -3614,6 +3685,91 @@ function renderActionsToGraphics(pg){
   }
 }
 
+
+/* =====================
+   Export helper: draw mixed text + MathJax SVG (no foreignObject, avoids taint)
+   ===================== */
+function splitMixedMath(raw){
+  // Returns an array of tokens: {type:"text",s} or {type:"math",s}
+  const s = String(raw || "");
+  const re = /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$)/g;
+  let out = [];
+  let last = 0;
+  let m;
+  while ((m = re.exec(s)) !== null){
+    if (m.index > last) out.push({type:"text", s: s.slice(last, m.index)});
+    out.push({type:"math", s: m[0]});
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) out.push({type:"text", s: s.slice(last)});
+  return out;
+}
+
+function set2DFont(ctx, sizePx, style){
+  const size = Math.max(6, Math.round(sizePx || 20));
+  let weight = "400";
+  let fontStyle = "normal";
+  if (style === "bold"){ weight="700"; fontStyle="normal"; }
+  if (style === "italic"){ weight="400"; fontStyle="italic"; }
+  ctx.font = `${fontStyle} ${weight} ${size}px "Libertinus Sans", system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial`;
+  ctx.textBaseline = "top";
+  ctx.fillStyle = "rgba(0,0,0,0.86)";
+  return size;
+}
+
+async function drawMixedTextAndMathSVG(ctx, raw, liveNode, x0, y0, fontSize, fontStyle){
+  const svgs = Array.from(liveNode.querySelectorAll("svg"));
+  if (!svgs.length) return false;
+
+  const tokens = splitMixedMath(raw);
+  let svgIdx = 0;
+
+  const size = set2DFont(ctx, fontSize, fontStyle);
+  const lineH = Math.round(size * 1.25);
+
+  let cx = x0;
+  let cy = y0;
+
+  for (const t of tokens){
+    if (t.type === "text"){
+      const parts = String(t.s).split(/\n/);
+      for (let pi=0; pi<parts.length; pi++){
+        const seg = parts[pi];
+        if (seg){
+          ctx.fillText(seg, cx, cy);
+          cx += ctx.measureText(seg).width;
+        }
+        if (pi < parts.length-1){
+          cx = x0;
+          cy += lineH;
+        }
+      }
+      continue;
+    }
+
+    // math token
+    const sLive = svgs[svgIdx++];
+    if (!sLive){
+      const fallback = stripTeX(t.s);
+      ctx.fillText(fallback, cx, cy);
+      cx += ctx.measureText(fallback).width;
+      continue;
+    }
+
+    const r = sLive.getBoundingClientRect();
+    const sw = Math.max(1, Math.round(r.width));
+    const sh = Math.max(1, Math.round(r.height));
+
+    const standalone = buildStandaloneMathJaxSVG(sLive, sw, sh);
+    const c = await rasterizeSVGToCanvas(standalone, sw, sh);
+
+    const dy = Math.round(size * 0.06);
+    ctx.drawImage(c, cx, cy + dy, sw, sh);
+    cx += sw;
+  }
+
+  return true;
+}
 async function composeExportCanvas(bb, PAD){
   // Ensure DOM text overlay exists + MathJax rendered so SVG exists
   rebuildTextOverlay();
@@ -3652,66 +3808,23 @@ async function composeExportCanvas(bb, PAD){
 
       const node = textOverlay.querySelector(`.text-box[data-layer="${li}"][data-index="${i}"]`);
       if (node){
-        const svg = node.querySelector("svg");
-        if (svg){
-          const w = Math.max(1, node.offsetWidth || (a.w||1));
-          const h = Math.max(1, node.offsetHeight || (a.h||1));
+        const bw = Math.max(1, node.offsetWidth || (a.w||1));
+        const bh = Math.max(1, node.offsetHeight || (a.h||1));
 
-          // Build a standalone SVG string with MathJax shared glyph defs inlined.
-          // Without this, formulas often render blank in exports.
-          const standalone = buildStandaloneMathJaxSVG(svg, w, h);
-
-          
-// First try: browser SVG rasterization (most robust across MathJax SVG variants)
-try{
-  const tmp0 = await rasterizeSVGToCanvas(standalone, w, h);
-  if (tmp0 && canvasHasInk(tmp0)){
-    ctx.drawImage(tmp0, x, y);
-    continue;
-  }
-}catch(e){ /* fall through */ }
-
-// Second try: canvg (avoid tainting; keeps toBlob/toDataURL working even if the SVG references external resources)
-try{
-  const Canvg = await ensureCanvg();
-  if (Canvg){
-    const tmp = document.createElement("canvas");
-    tmp.width = w;
-    tmp.height = h;
-    const tctx = tmp.getContext("2d");
-
-    const v = await Canvg.fromString(tctx, standalone, {
-      ignoreMouse: true,
-      ignoreAnimation: true,
-      ignoreDimensions: true,
-      ignoreClear: true
-    });
-    await v.render();
-
-    if (canvasHasInk(tmp)){
-      ctx.drawImage(tmp, x, y);
-      continue;
-    }
-  }
-}catch(e){ /* fall through */ }
-
-          // Fallback: draw as Image from data URL
+        // If this text box contains MathJax SVG, draw plain text + rasterized formula SVGs (no foreignObject)
+        if (node.querySelector("svg")){
           try{
-            const img = await svgStringToImageElement(standalone);
-            // Draw into a temporary canvas first so we can detect "blank" renders.
-            const tmp2 = document.createElement("canvas");
-            tmp2.width = w;
-            tmp2.height = h;
-            const t2 = tmp2.getContext("2d");
-            t2.drawImage(img, 0, 0, w, h);
-            if (!canvasHasInk(tmp2)) throw new Error("image blank");
-            ctx.drawImage(tmp2, x, y);
-            continue;
+            const ok = await drawMixedTextAndMathSVG(ctx, a.raw, node, x, y, a.size || 20, a.style || "regular");
+            if (ok) continue;
           }catch(e){ /* fall through */ }
         }
+
+        // No MathJax SVG (or failed): draw as plain text
+        drawPlainText2D(ctx, { ...a, raw: stripTeX(a.raw), x, y });
+        continue;
       }
 
-      // fallback
+      // fallback when DOM node is missing
       drawPlainText2D(ctx, { ...a, raw: stripTeX(a.raw), x, y });
     }
   }
