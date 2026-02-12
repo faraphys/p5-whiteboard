@@ -1,5 +1,5 @@
-============================================================ INTERACTIVE
-PHYSICS WHITEBOARD – DETAILED README
+============================================================ 
+INTERACTIVE PHYSICS WHITEBOARD – DETAILED README
 ============================================================
 
 OVERVIEW
