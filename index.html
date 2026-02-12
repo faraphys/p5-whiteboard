@@ -1588,7 +1588,7 @@ function updateMeasureForCurrentShape(){
     if (len < 2){ hideMeasureBox(); return; }
 
     const lenPx = quantizeScalar(len);
-    const deg = Math.round(normDegSigned(radToDeg(Math.atan2(dy, dx))));
+    const deg = Math.round(normDegSigned(radToDeg(Math.atan2(-dy, dx))));
     showMeasureBox([`L: ${lenPx} px`, `α: ${deg}°`]);
     return;
   }
@@ -2677,13 +2677,13 @@ function onKeyDown(ev){
   }
 
   // Zoom in/out (Z/U)
-  if (k==="z"){
+  if (!(ev.ctrlKey||ev.metaKey) && k==="z"){
     zoomLevel = Math.min(3, zoomLevel * 1.1);
     applyZoom();
     return;
   }
-  if (k==="u"){
-    zoomLevel = Math.max(0.25, zoomLevel / 1.1);
+  if (!(ev.ctrlKey||ev.metaKey) && k==="u"){
+    zoomLevel = Math.max(1, zoomLevel / 1.1);
     applyZoom();
     return;
   }
@@ -2945,8 +2945,8 @@ function initUI(){
   shapeToolSel.value = "arrow";
   tool = "pointer";
   // Zoom controls
-  btnZoomIn.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = clamp(zoomLevel * 1.2, 0.5, 3); applyZoom(); showToast(`Zoom ${Math.round(zoomLevel*100)}%`, 900); });
-  btnZoomOut.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = clamp(zoomLevel / 1.2, 0.5, 3); applyZoom(); showToast(`Zoom ${Math.round(zoomLevel*100)}%`, 900); });
+  btnZoomIn.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = clamp(zoomLevel * 1.2, 1, 3); applyZoom(); showToast(`Zoom ${Math.round(zoomLevel*100)}%`, 900); });
+  btnZoomOut.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = clamp(zoomLevel / 1.2, 1, 3); applyZoom(); showToast(`Zoom ${Math.round(zoomLevel*100)}%`, 900); });
   btnZoomReset.addEventListener("click", (e)=>{ e.preventDefault(); resetView(); });
 
 
