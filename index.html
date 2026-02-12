@@ -344,6 +344,9 @@
 
     /* Shortcut box (toggle, left of toolbar) */
     #shortcutBox{
+      max-height: 60vh;
+      overflow-y: auto;
+      padding-right: 10px;
       pointer-events:none;
       white-space: normal;
       max-width: 280px;
@@ -388,9 +391,9 @@
     <!-- Utility row (collapsed) -->
     <div id="utilRow" class="utilRow" aria-label="Shortcuts / Zoom">
       <button id="btnPan" class="miniBtn utilBtn" title="Move canvas (M)">🖐︎</button>
-      <button id="btnZoomOut" class="miniBtn utilBtn" title="Zoom out">−</button>
-      <button id="btnZoomIn" class="miniBtn utilBtn" title="Zoom in">+</button>
-      <button id="btnZoomReset" class="miniBtn utilBtn" title="Reset zoom (100%)">↺</button>
+      <button id="btnZoomOut" class="miniBtn utilBtn" title="Zoom out (U)">−</button>
+      <button id="btnZoomIn" class="miniBtn utilBtn" title="Zoom in (Z)">+</button>
+      <button id="btnZoomReset" class="miniBtn utilBtn" title="Reset view (R)">↺</button>
     </div>
 <!-- Export row (hidden when embedded) -->
     <div id="exportRow" class="exportRow" aria-label="Export / Save / Load">
@@ -441,7 +444,7 @@
       <button class="tool" id="toolFill" title="Fill (F)"><span class="ico">🪣</span><span>Fill</span></button>
       <button class="tool" id="toolText" title="Text / LaTeX (T)"><span class="ico">T</span><span>Text / LaTeX</span></button>
 
-      <button class="tool" id="toolLaser" title="Laser (R)"><span class="ico red">◎</span><span>Laser</span></button>
+      <button class="tool" id="toolLaser" title="Laser (O)"><span class="ico red">◎</span><span>Laser</span></button>
       <button class="tool" id="toolLasso" title="Lasso (L)"><span class="ico">⟲</span><span>Lasso</span></button>
 
       <select id="bgMode" title="Background (G)">
@@ -685,6 +688,24 @@ let view = { tx: 0, ty: 0, scale: 1 }; // kept for backwards compatibility (unus
 
 // Simple UI zoom (scales the drawing stage only)
 let zoomLevel = 1;
+function resetView(){
+  // Reset zoom + undo any panning back to original position
+  zoomLevel = 1;
+  applyZoom();
+  if (panOffsetTotal.x || panOffsetTotal.y){
+    const dx = -panOffsetTotal.x;
+    const dy = -panOffsetTotal.y;
+    for (let li=0; li<3; li++){
+      for (const a of layers[li].actions) translateAction(a, dx, dy);
+    }
+    panOffsetTotal = {x:0, y:0};
+    rebuildAllBuffers();
+    rebuildTextOverlay();
+    saveToStorage(slideKey);
+  }
+  showToast("Reset view", 900);
+}
+
 function applyZoom(){
   const st = document.getElementById("stage");
   if (!st) return;
@@ -734,7 +755,7 @@ let lastSignificantMoveAt = 0;
 let lastMovePos = {x:0,y:0};
 
 // Shapes cycling (S)
-const SHAPES = ["line","arrow","circle","rect","shadowRect","rightTri","coord1","coord2","coord3","ellipse","ellipse99"];
+const SHAPES = [ "line", "arrow", "circle", "rect", "shadowRect", "rightTri", "titleBox", "coord1", "coord2", "coord3", "ellipse", "ellipse99" ];
 let shapeIndex = 1; // arrow
 
 // Layers (3)
@@ -749,6 +770,7 @@ const UNDO_LIMIT = 40;
 
 // Pan (preview translate, applied on release)
 let panState = { active:false, start:{x:0,y:0}, last:{x:0,y:0}, dx:0, dy:0 };
+let panOffsetTotal = { x:0, y:0 };
 let coordSnapRestore = { active:false, prev:false };
 
 let lasso = {
@@ -872,34 +894,26 @@ function setShortcutBoxHTML(){
   if (!shortcutBox) return;
   shortcutBox.innerHTML = `
     <div class="title">Shortcuts</div>
-    <div class="row"><code>Esc</code><span>Pointer</span></div>
-    <div class="row"><code>X</code><span>Exp./collapse toolbar</span></div>
-
-    <div class="row"><code>P</code><span>Pen</span></div>
-    <div class="row"><code>E</code><span>Eraser</span></div>
-    <div class="row"><code>H</code><span>Highlighter</span></div>
-    <div class="row"><code>R</code><span>Laser</span></div>
-    <div class="row"><code>L</code><span>Lasso</span></div>
-    <div class="row"><code>T</code><span>Text</span></div>
-    <div class="row"><code>F</code><span>Fill</span></div>
-
-    <div class="row"><code>S</code><span>Cycle shapes</span></div>
-    <div class="row"><code>C</code><span>Cycle basic colors</span></div>
-    <div class="row"><code>Ctrl+1..9</code><span>Color</span></div>
-
-    <div class="row"><code>1..9</code><span>Width</span></div>
-    <div class="row"><code>W</code><span>Cycle width</span></div>
-    <div class="row"><code>M</code><span>Cycle smoothness</span></div>
-
-    <div class="row"><code>Q</code><span>Cycle transp.</span></div>
-
-    <div class="row"><code>Y</code><span>Next layer</span></div>
-    <div class="row"><code>G</code><span>Cycle background</span></div>
-    <div class="row"><code>N</code><span>Snap on/off</span></div>
-
-    <div class="row"><code>Ctrl+Z</code><span>Undo</span></div>
-    <div class="row"><code>Ctrl+D</code><span>Clear</span></div>
-    <div class="row"><code>Del</code><span>Delete selection</span></div>
+    <div class="row"><span><code>Esc</code></span><span>Pointer</span></div>
+    <div class="row"><span><code>P</code></span><span>Pen</span></div>
+    <div class="row"><span><code>E</code></span><span>Eraser</span></div>
+    <div class="row"><span><code>H</code></span><span>Highlighter</span></div>
+    <div class="row"><span><code>O</code></span><span>Laser</span></div>
+    <div class="row"><span><code>M</code></span><span>Pan</span></div>
+    <div class="row"><span><code>S</code></span><span>Cycle shapes</span></div>
+    <div class="row"><span><code>C</code></span><span>Cycle colors</span></div>
+    <div class="row"><span><code>W</code></span><span>Cycle width</span></div>
+    <div class="row"><span><code>Q</code></span><span>Cycle transp.</span></div>
+    <div class="row"><span><code>A</code></span><span>Cycle smooth.</span></div>
+    <div class="row"><span><code>Y</code></span><span>Next layer</span></div>
+    <div class="row"><span><code>Z</code></span><span>Zoom in</span></div>
+    <div class="row"><span><code>U</code></span><span>Zoom out</span></div>
+    <div class="row"><span><code>R</code></span><span>Reset view</span></div>
+    <div class="row"><span><code>Ctrl+1..9</code></span><span>Smooth 1..9</span></div>
+    <div class="row"><span><code>1..9</code></span><span>Width presets</span></div>
+    <div class="row"><span><code>Ctrl+Z</code></span><span>Undo</span></div>
+    <div class="row"><span><code>Ctrl+D</code></span><span>Clear layer</span></div>
+    <div class="row"><span><code>Del</code></span><span>Delete selection</span></div>
   `;
 }
 
@@ -979,7 +993,7 @@ function actionBBox(a){
   }
   if (a.type==="path") return pathBBox(a);
   if (a.type==="ellipse") return ellipseBBox(a);
-  if (a.type==="line"||a.type==="arrow"||a.type==="rect"||a.type==="shadowRect"||a.type==="rightTri"||(a.type==="coord1" || a.type==="coord2" || a.type==="coord3")){
+  if (a.type==="line"||a.type==="arrow"||a.type==="rect"||a.type==="shadowRect"||a.type==="titleBox"||a.type==="rightTri"||(a.type==="coord1" || a.type==="coord2" || a.type==="coord3")){
     const minX=Math.min(a.a.x,a.b.x), minY=Math.min(a.a.y,a.b.y);
     const maxX=Math.max(a.a.x,a.b.x), maxY=Math.max(a.a.y,a.b.y);
     return { x:minX, y:minY, w:maxX-minX, h:maxY-minY };
@@ -1096,7 +1110,7 @@ function translateAction(a,dx,dy){
   if (a.type==="text"){ a.x+=dx; a.y+=dy; }
   else if (a.type==="path"){ for(const p of a.points){ p.x+=dx; p.y+=dy; } }
   else if (a.type==="ellipse"){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
-  else if (a.type==="line"||a.type==="arrow"||a.type==="rect"||a.type==="shadowRect"||a.type==="rightTri"||(a.type==="coord1" || a.type==="coord2" || a.type==="coord3")){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
+  else if (a.type==="line"||a.type==="arrow"||a.type==="rect"||a.type==="shadowRect"||a.type==="titleBox"||a.type==="rightTri"||(a.type==="coord1" || a.type==="coord2" || a.type==="coord3")){ a.a.x+=dx; a.a.y+=dy; a.b.x+=dx; a.b.y+=dy; }
   else if (a.type==="circle"){ a.c.x+=dx; a.c.y+=dy; }
   else if (a.type==="fill"){ a.x+=dx; a.y+=dy; }
 }
@@ -1395,6 +1409,43 @@ function drawShapeAction(a, target){
     }
   }
 
+
+
+  else if (a.type=="titleBox"){
+    const x=Math.min(a.a.x,a.b.x), y=Math.min(a.a.y,a.b.y);
+    const w=Math.abs(a.b.x-a.a.x), h=Math.abs(a.b.y-a.a.y);
+    if (w<2 || h<2) return;
+
+    // Simple ribbon-style title box (outline only)
+    const rr = Math.min(18, h*0.45);
+    const tail = Math.min(w*0.18, h*0.9);
+
+    // Main rounded box
+    target.push();
+    target.noFill();
+    target.rect(x+tail, y, w-2*tail, h, rr);
+
+    // Left ribbon tail
+    target.beginShape();
+    target.vertex(x+tail, y);
+    target.vertex(x, y + h*0.20);
+    target.vertex(x, y + h*0.80);
+    target.vertex(x+tail, y + h);
+    target.endShape(CLOSE);
+
+    // Right ribbon tail
+    target.beginShape();
+    target.vertex(x+w-tail, y);
+    target.vertex(x+w, y + h*0.20);
+    target.vertex(x+w, y + h*0.80);
+    target.vertex(x+w-tail, y + h);
+    target.endShape(CLOSE);
+
+    // Small inner fold lines
+    target.line(x+tail, y+h, x+tail*0.55, y+h*0.60);
+    target.line(x+w-tail, y+h, x+w-tail*0.55, y+h*0.60);
+    target.pop();
+  }
   else if (a.type==="rightTri"){
     // First click fixes a point on the horizontal base line (A). Drag point (C) sets size.
     // Right angle is at B, which lies on the base line at the dragged x-position.
@@ -1528,7 +1579,7 @@ function renderLayers(target){
 
 function updateMeasureForCurrentShape(){
   if (!current) { hideMeasureBox(); return; }
-  if (!(current.type==="line" || current.type==="arrow" || current.type==="circle" || current.type==="rect" || current.type==="shadowRect" || current.type==="rightTri")) { hideMeasureBox(); return; }
+  if (!(current.type==="line" || current.type==="arrow" || current.type==="circle" || current.type==="rect" || current.type==="shadowRect" || current.type==="titleBox" || current.type==="rightTri")) { hideMeasureBox(); return; }
 
   if ((current.type==="line" || current.type==="arrow") && current.a && current.b){
     const dx = current.b.x - current.a.x;
@@ -1547,7 +1598,7 @@ function updateMeasureForCurrentShape(){
     return;
   }
 
-  if ((current.type==="rect" || current.type==="shadowRect") && current.a && current.b){
+  if ((current.type==="rect" || current.type==="shadowRect" || current.type==="titleBox") && current.a && current.b){
     const w = Math.abs(current.b.x-current.a.x);
     const h = Math.abs(current.b.y-current.a.y);
     if (w<1 && h<1){ hideMeasureBox(); return; }
@@ -1592,7 +1643,7 @@ function drawCurrentPreview(a){
     return;
   }
 
-  if (["line","arrow","circle","rect","shadowRect","rightTri","coord1","coord2","coord3","ellipse","ellipse99"].includes(a.type)){
+  if (["line","arrow","circle","rect","shadowRect","rightTri","titleBox","coord1","coord2","coord3","ellipse","ellipse99"].includes(a.type)){
     push();
     drawShapeAction(a, this);
     pop();
@@ -2225,7 +2276,7 @@ function startAction(x,y,pressure,pointerType){
     return;
   }
 
-  if (["line","arrow","circle","rect","shadowRect","rightTri","coord1","coord2","coord3","ellipse","ellipse99"].includes(tool)) pushUndo(layerIndex);
+  if (["line","arrow","circle","rect","shadowRect","rightTri","titleBox","coord1","coord2","coord3","ellipse","ellipse99"].includes(tool)) pushUndo(layerIndex);
 
   const style=makeStyleForCurrent(pressure,pointerType);
   if (tool==="line") current={type:"line", style:style, a:p0, b:p0, layer:layerIndex};
@@ -2233,6 +2284,7 @@ function startAction(x,y,pressure,pointerType){
   if (tool==="circle") current={type:"circle", style:style, c:p0, r:0, layer:layerIndex};
   if (tool==="rect") current={type:"rect", style:style, a:p0, b:p0, layer:layerIndex};
   if (tool==="shadowRect") current={type:"shadowRect", style:style, a:p0, b:p0, layer:layerIndex};
+  if (tool==="titleBox") current={type:"titleBox", style:style, a:p0, b:p0, layer:layerIndex};
   if (tool==="rightTri") current={type:"rightTri", style:style, a:p0, b:p0, layer:layerIndex};
   if (tool==="coord1" || tool==="coord2" || tool==="coord3") {
     coordSnapRestore.prev = snapToGrid;
@@ -2320,7 +2372,7 @@ function extendAction(x,y,pressure,pointerType){
     return;
   }
 
-  if (["rect","shadowRect","rightTri","coord1","coord2","coord3","ellipse"].includes(current.type)) current.b = p;
+  if (["rect","shadowRect","rightTri","titleBox","coord1","coord2","coord3","ellipse"].includes(current.type)) current.b = p;
   if (current.type==="circle") current.r = quantizeScalar(dist(current.c.x,current.c.y,p.x,p.y));
 
   updateMeasureForCurrentShape();
@@ -2338,6 +2390,10 @@ function finishAction(){
     const sdy = Math.round(panState.dy / GRID_STEP) * GRID_STEP;
     const cx = sdx - panState.dx;
     const cy = sdy - panState.dy;
+
+    // Track snapped pan offset for Reset
+    panOffsetTotal.x += sdx;
+    panOffsetTotal.y += sdy;
 
     if (cx || cy){
       for (let li=0; li<3; li++){
@@ -2400,7 +2456,7 @@ function finishAction(){
       }
     }
   } else {
-    if (current.type==="line" || current.type==="arrow" || current.type==="rect" || current.type==="shadowRect" || current.type==="rightTri" || (current.type==="coord1"||current.type==="coord2"||current.type==="coord3") || current.type==="ellipse" || current.type==="ellipse99"){
+    if (current.type==="line" || current.type==="arrow" || current.type==="rect" || current.type==="shadowRect" || current.type==="titleBox" || current.type==="rightTri" || (current.type==="coord1"||current.type==="coord2"||current.type==="coord3") || current.type==="ellipse" || current.type==="ellipse99"){
       current.a = quantizePoint(current.a);
       current.b = quantizePoint(current.b);
     }
@@ -2500,21 +2556,18 @@ function onKeyDown(ev){
     if (k==="o") { ev.preventDefault(); openAllAnnotationsJSON(); return; }
   }
 
-  // Color shortcuts (Ctrl+1..9)
+  // Smoothness shortcuts (Ctrl+1..9)
   if ((ev.ctrlKey||ev.metaKey) && /^[1-9]$/.test(k)){
     ev.preventDefault();
-    const idx = parseInt(k,10)-1;
-    const hex = COLORS[idx] || COLORS[0];
-    currentColor = hex;
-    if (colorChip) colorChip.style.background = hex;
-
-    if (tool==="laser"){
-      laserPrefs = { color: currentColor, width: strokeWidth, transp };
-    } else if (tool!=="highlighter" && tool!=="eraser"){
+    const sm = parseInt(k,10);
+    smoothing = sm;
+    if (smoothingSel) smoothingSel.value = String(smoothing);
+    updateSmoothingSelectLabel();
+    if (tool!=="highlighter" && tool!=="laser" && tool!=="eraser"){
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     }
     saveToStorage(slideKey);
-    showCursorHintWithColor("Color", currentColor);
+    showCursorHintWithColor(`Smooth ${smoothing}/10`, currentColor);
     return;
   }
 
@@ -2603,7 +2656,6 @@ function onKeyDown(ev){
     showCursorHintWithColor(`Transp. ${transp}/10`, currentColor);
     return;
   }
-
   // Smoothness cycle (A)
   if (k==="a"){
     smoothing = (smoothing % 10) + 1;
@@ -2612,20 +2664,40 @@ function onKeyDown(ev){
     if (tool!=="highlighter" && tool!=="laser" && tool!=="eraser"){
       penState = { color: currentColor, width: strokeWidth, transp, smoothing };
     }
+    saveToStorage(slideKey);
+    showCursorHintWithColor(`Smooth. ${smoothing}/10`, currentColor);
+    return;
+  }
 
+  // Pan (M)
   if (k==="m"){
     setTool("pan");
     showCursorHint("Move canvas");
+    return;
   }
-    saveToStorage(slideKey);
-    showCursorHintWithColor(`Smooth. ${smoothing}/10`, currentColor);
+
+  // Zoom in/out (Z/U)
+  if (k==="z"){
+    zoomLevel = Math.min(3, zoomLevel * 1.1);
+    applyZoom();
+    return;
+  }
+  if (k==="u"){
+    zoomLevel = Math.max(0.25, zoomLevel / 1.1);
+    applyZoom();
+    return;
+  }
+
+  // Reset view (R)
+  if (k==="r"){
+    resetView();
     return;
   }
 
   if (k==="p") setTool("pen");
   if (k==="e") setTool("eraser");
   if (k==="h") setTool("highlighter");
-  if (k==="r") setTool("laser");
+  if (k==="o") setTool("laser");
   if (k==="l") setTool("lasso");
   if (k==="t") setTool("text");
   if (k==="f") setTool("fill");
@@ -2875,7 +2947,7 @@ function initUI(){
   // Zoom controls
   btnZoomIn.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = clamp(zoomLevel * 1.2, 0.5, 3); applyZoom(); showToast(`Zoom ${Math.round(zoomLevel*100)}%`, 900); });
   btnZoomOut.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = clamp(zoomLevel / 1.2, 0.5, 3); applyZoom(); showToast(`Zoom ${Math.round(zoomLevel*100)}%`, 900); });
-  btnZoomReset.addEventListener("click", (e)=>{ e.preventDefault(); zoomLevel = 1; applyZoom(); showToast("Zoom 100%", 900); });
+  btnZoomReset.addEventListener("click", (e)=>{ e.preventDefault(); resetView(); });
 
 
 
@@ -2985,7 +3057,7 @@ function setTool(t){
   }
 
   const fromSpecial = (tool==="highlighter" || tool==="laser");
-  const isPenOrShape = (t==="pen" || ["line","arrow","circle","rect","shadowRect","rightTri","coord1","coord2","coord3","ellipse","ellipse99"].includes(t));
+  const isPenOrShape = (t==="pen" || ["line","arrow","circle","rect","shadowRect","rightTri","titleBox","coord1","coord2","coord3","ellipse","ellipse99"].includes(t));
   if (isPenOrShape && fromSpecial){
     restoredFromSpecial = true;
     currentColor = penState.color;
